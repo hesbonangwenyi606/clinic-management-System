@@ -1,0 +1,21 @@
+{
+  "name": "clinic-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"npm:dev --workspace @cms/api\" \"npm:dev --workspace @cms/web\"",
+    "build": "npm run build --workspace @cms/api && npm run build --workspace @cms/web",
+    "typecheck": "npm run typecheck --workspace @cms/api && npm run typecheck --workspace @cms/web",
+    "test": "npm run test --workspace @cms/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

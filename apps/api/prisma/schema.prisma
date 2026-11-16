@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PATIENT
+  SUPER_ADMIN
+  CLINIC_ADMIN
+  RECEPTIONIST
+  CASHIER
+  ATTENDANT
+  PHARMACIST
+  LAB_TECHNICIAN
+  CLINICIAN_1
+  CLINICIAN_2
+  CLINICIAN_3
+  RECOVERY_NURSE
+  CATERING_STAFF
+  ACCOUNTANT
+  PROCUREMENT_OFFICER
+}
+
+enum VisitType {
+  OUTPATIENT
+  INPATIENT
+}
+
+enum VisitStatus {
+  REGISTERED
+  WAITING
+  IN_PROGRESS
+  REFERRED
+  ADMITTED
+  UNDER_OBSERVATION
+  COMPLETED
+  DISCHARGED
+  CANCELLED
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+  NOT_SPECIFIED
+}
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  patientId String? @unique @db.Uuid
+  patient Patient? @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         UserRole
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  createdVisits Visit[]     @relation("VisitCreator")
+  auditEntries AuditLog[]
+  workflowEvents WorkflowEvent[] @relation("WorkflowChanger")
+}
+
+model Patient {
+  id              String   @id @default(uuid()) @db.Uuid
+  patientNumber   String   @unique
+  firstName       String
+  lastName        String
+  dateOfBirth     DateTime?
+  gender          Gender  @default(NOT_SPECIFIED)
+  phone           String?
+  email           String?
+  address         String?
+  emergencyContact String?
+  nextOfKin       String?
+  allergies       String?
+  medicalAlerts   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  visits          Visit[]
+  portalAccount User?
+  appointments Appointment[]
+}
+
+model Visit {
+  id              String      @id @default(uuid()) @db.Uuid
+  visitNumber     String      @unique
+  patientId       String      @db.Uuid
+  patient         Patient     @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  type            VisitType
+  status          VisitStatus @default(REGISTERED)
+  reason          String
+  currentDepartment String?
+  arrivedAt       DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  createdById     String      @db.Uuid
+  createdBy       User        @relation("VisitCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  workflowEvents  WorkflowEvent[]
+  careEntries CareEntry[]
+  labOrders LabOrder[]
+  invoices Invoice[]
+  prescriptions Prescription[]
+
+  @@index([patientId, createdAt])
+  @@index([status, arrivedAt])
+}
+
+model CareEntry {
+  id String @id @default(uuid()) @db.Uuid
+  visitId String @db.Uuid
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  department String
+  summary String
+  details Json
+  recordedBy String @db.Uuid
+  createdAt DateTime @default(now())
+  @@index([visitId, createdAt])
+}
+
+model LabOrder {
+  id String @id @default(uuid()) @db.Uuid
+  visitId String @db.Uuid
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  testName String
+  status String @default("REQUESTED")
+  result String?
+  requestedBy String @db.Uuid
+  resultedBy String? @db.Uuid
+  resultedAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+model StockItem {
+  id String @id @default(uuid()) @db.Uuid
+  name String
+  batch String
+  expiresAt DateTime
+  quantity Int @default(0)
+  reorderLevel Int @default(10)
+  movements StockMovement[]
+  prescriptions Prescription[]
+  @@unique([name, batch])
+}
+
+model StockMovement {
+  id String @id @default(uuid()) @db.Uuid
+  stockItemId String @db.Uuid
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  quantity Int
+  reason String
+  recordedBy String @db.Uuid
+  createdAt DateTime @default(now())
+}
+
+model Prescription {
+  id String @id @default(uuid()) @db.Uuid
+  visitId String @db.Uuid
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  stockItemId String @db.Uuid
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  quantity Int
+  instructions String
+  prescribedBy String @db.Uuid
+  dispensedBy String? @db.Uuid
+  dispensedAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Invoice {
+  id String @id @default(uuid()) @db.Uuid
+  visitId String @db.Uuid
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
+  description String
+  amountCents Int
+  createdBy String @db.Uuid
+  createdAt DateTime @default(now())
+  payments Payment[]
+}
+
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String @db.Uuid
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amountCents Int
+  method String
+  reference String @unique
+  recordedBy String @db.Uuid
+  createdAt DateTime @default(now())
+}
+
+model Appointment {
+  id String @id @default(uuid()) @db.Uuid
+  patientId String @db.Uuid
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  scheduledAt DateTime
+  reason String
+  status String @default("BOOKED")
+  createdBy String @db.Uuid
+  createdAt DateTime @default(now())
+  @@index([scheduledAt, status])
+}
+
+model WorkflowEvent {
+  id          String      @id @default(uuid()) @db.Uuid
+  visitId     String      @db.Uuid
+  visit       Visit       @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  fromStatus  VisitStatus?
+  toStatus    VisitStatus
+  note        String?
+  changedById String      @db.Uuid
+  changedBy   User        @relation("WorkflowChanger", fields: [changedById], references: [id], onDelete: Restrict)
+  changedAt   DateTime    @default(now())
+
+  @@index([visitId, changedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  action     String
+  entityType String
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Expense {
+ id String @id @default(uuid()) @db.Uuid
+ description String
+ category String
+ amountCents Int
+ reference String @unique
+ incurredAt DateTime
+ recordedBy String @db.Uuid
+ createdAt DateTime @default(now())
+}
