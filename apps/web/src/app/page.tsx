@@ -1,14 +1,20 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 
-import { canPerform, modulesFor } from '@cms/access';
-import { AnimatedDialog, LoadingState } from '../components/motion';
-import Operations from './operations';
-import Reports from './reports';
-import Portal from './portal';
+import { canPerform, modulesFor, visitTransitionsFor } from '@cms/access';
+import { LoadingState } from '../components/motion';
+import PatientChart from './patient-record';
+import Account from './account';
+import RecordPicker from '../components/record-picker';
 
 import { api, ApiError } from '../lib/api';
+
+const Operations = dynamic(() => import('./operations'), { loading: () => <LoadingState label="Loading departments…" /> });
+const Reports = dynamic(() => import('./reports'), { loading: () => <LoadingState label="Loading reports…" /> });
+const Employees = dynamic(() => import('./employees'), { loading: () => <LoadingState label="Loading employees…" /> });
+const Portal = dynamic(() => import('./portal'), { loading: () => <LoadingState label="Loading your clinic record…" /> });
 
 type User = {
   id: string;
@@ -41,6 +47,7 @@ export default function Home() {
   const roleRef = useRef('');
   const refreshRequest = useRef(0);
   const [tab, setTab] = useState('desk');
+  const [reportsOpened, setReportsOpened] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -49,17 +56,38 @@ export default function Home() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [page,setPage] = useState(1);
+  const [patientPage,setPatientPage] = useState(1);
+  const [patientTotal,setPatientTotal] = useState(0);
+  const [summary,setSummary] = useState({active:0,waiting:0});
 
   const refresh = useCallback(async (search = '') => {
     const request = ++refreshRequest.current;
-    const [patientResult, visitResult] = await Promise.all([
-      canPerform(roleRef.current,'patients.read') ? api<{ items: Patient[]; total: number }>(`/patients?search=${encodeURIComponent(search)}&pageSize=100`) : Promise.resolve({items:[],total:0}),
-      canPerform(roleRef.current,'visits.read') ? api<Visit[]>('/visits') : Promise.resolve([]),
+    const [patientResult, visitResult, totals] = await Promise.all([
+      canPerform(roleRef.current,'patients.read') ? api<{ items: Patient[]; total: number }>(`/patients?search=${encodeURIComponent(search)}&pageSize=50&page=${patientPage}`) : Promise.resolve({items:[],total:0}),
+      canPerform(roleRef.current,'visits.read') ? api<Visit[]>(`/visits?search=${encodeURIComponent(search)}&pageSize=50&page=${page}`) : Promise.resolve([]),
+      canPerform(roleRef.current,'visits.read') ? api<{active:number;waiting:number}>('/visits/summary') : Promise.resolve({active:0,waiting:0}),
     ]);
     if (request !== refreshRequest.current) return;
     setPatients(patientResult.items);
     setVisits(visitResult);
-  }, []);
+    setPatientTotal(patientResult.total);
+    setSummary(totals);
+  }, [page,patientPage]);
+
+  useEffect(() => {
+    const expired = () => {
+      refreshRequest.current++; roleRef.current='';setUser(null);setPatients([]);setVisits([]);setTab('desk');setNotice('');setError('Your session ended. Please sign in again.');
+    };
+    window.addEventListener('cms:session-expired',expired);
+    return () => window.removeEventListener('cms:session-expired',expired);
+  },[]);
+
+  useEffect(() => {
+    if (!user) return;
+    const timeout = window.setTimeout(()=>void refresh(query).catch(e=>setError(e.message)),query ? 300 : 0);
+    return () => window.clearTimeout(timeout);
+  },[query,refresh,user]);
 
   useEffect(() => {
     api<User>('/auth/me')
@@ -67,9 +95,6 @@ export default function Home() {
         roleRef.current = activeUser.role;
         setUser(activeUser);
         if (activeUser.role.startsWith('CLINICIAN')) setTab('departments');
-        void refresh().catch((reason: unknown) =>
-          setError(reason instanceof Error ? reason.message : 'Unable to load clinic data.'),
-        );
       })
       .catch((reason: unknown) => {
         setUser(null);
@@ -78,7 +103,7 @@ export default function Home() {
         }
       })
       .finally(() => setLoading(false));
-  }, [refresh]);
+  }, []);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,7 +121,6 @@ export default function Home() {
       roleRef.current = result.user.role;
       setUser(result.user);
       setTab(result.user.role.startsWith('CLINICIAN') ? 'departments' : 'desk');
-      await refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to sign in.');
     } finally {
@@ -115,6 +139,8 @@ export default function Home() {
       setVisits([]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to sign out.');
+    } finally {
+      refreshRequest.current++;roleRef.current='';setUser(null);setPatients([]);setVisits([]);setTab('desk');setNotice('');
     }
   }
 
@@ -202,17 +228,18 @@ export default function Home() {
   const canRegister = canPerform(user.role,'patients.create');
   const hasDepartments = modulesFor(user.role).length > 0;
   const canWorkflow = canPerform(user.role,'visits.status');
-  const visibleVisits = visits.filter(v => (v.patient.firstName+' '+v.patient.lastName+' '+v.patient.patientNumber+' '+(v.patient.phone??'')).toLowerCase().includes(query.toLowerCase()));
+  const visibleVisits = visits;
   return (
     <main className="workspace">
       <header className="topbar">
         <div className="brand-line"><div className="brand-icon small">+</div><div><strong>Clinic CMS</strong><small>Operations workspace</small></div></div>
-        <div className="user-area"><span>{user.firstName} {user.lastName}<small>{user.role.replaceAll('_', ' ')}</small></span><button className="quiet-button" onClick={signOut}>Sign out</button></div>
+        <div className="user-area"><span>{user.firstName} {user.lastName}<small>{user.role.replaceAll('_', ' ')}</small></span><Account onChanged={signOut}/><button className="quiet-button" onClick={signOut}>Sign out</button></div>
       </header>
 
-      <nav className="module-tabs" aria-label="Workspace"><button className={tab === 'desk' ? 'selected' : ''} onClick={() => setTab('desk')}>Patient desk</button>{hasDepartments && <button className={tab === 'departments' && hasDepartments ? 'selected' : ''} onClick={() => {setTab('departments'); void refresh(query).catch(e => setError(e.message));}}>Departments & administration</button>}{canPerform(user.role,'reports.read') && <button className={tab === 'reports' ? 'selected' : ''} onClick={()=>setTab('reports')}>Reports</button>}</nav>
-      <div className="motion-page" key={tab}>
-      {tab === 'reports' && canPerform(user.role,'reports.read') ? <Reports /> : tab === 'departments' && hasDepartments ? <Operations role={user.role} patients={patients} visits={visits} userId={user.id} /> : <>
+      <nav className="module-tabs" aria-label="Workspace"><button className={tab === 'desk' ? 'selected' : ''} onClick={() => setTab('desk')}>Patient desk</button>{hasDepartments && <button className={tab === 'departments' && hasDepartments ? 'selected' : ''} onClick={() => {setTab('departments'); void refresh(query).catch(e => setError(e.message));}}>Departments & administration</button>}{canPerform(user.role,'reports.read') && <button className={tab === 'reports' ? 'selected' : ''} onClick={()=>{setReportsOpened(true);setTab('reports');}}>Reports</button>}{canPerform(user.role,'staff.create') && <button className={tab === 'employees' ? 'selected' : ''} onClick={()=>{setTab('employees');void refresh().catch(e=>setError(e.message));}}>Employees</button>}</nav>
+      {reportsOpened && canPerform(user.role,'reports.read') && <div hidden={tab !== 'reports'}><Reports key={user.id} active={tab === 'reports'} /></div>}
+      <div className="motion-page" key={tab} hidden={tab === 'reports'}>
+      {tab === 'employees' && canPerform(user.role,'staff.create') ? <Employees role={user.role} userId={user.id} patients={patients} /> : tab === 'departments' && hasDepartments ? <Operations role={user.role} patients={patients} visits={visits} userId={user.id} /> : <>
       <section className="welcome-row">
         <div><p className="eyebrow">TODAY AT THE CLINIC</p><h1>Patient desk</h1><p className="subtle">Register patients, open visits, and track active workflow.</p></div>
         <div className="today-pill">{new Intl.DateTimeFormat('en-KE', { dateStyle: 'medium' }).format(new Date())}</div>
@@ -221,11 +248,11 @@ export default function Home() {
       {error && <p className="alert error">{error}</p>}
       {notice && <p className="alert success">{notice}</p>}
 
-      {user.role === 'RECEPTIONIST' && <p className="alert success">Reception access: register patients, open visits, and view existing patient records. Changes to existing records and department access are restricted.</p>}
+      {user.role === 'RECEPTIONIST' && <p className="alert success">Reception access: register and edit patients, open visits, and view patient history. Only administrators can delete patients. Department access is restricted.</p>}
       <section className="stats">
         <article className="stat-card"><span>Patients shown</span><strong>{patients.length}</strong><small>Search results</small></article>
-        <article className="stat-card"><span>Active visits</span><strong>{visits.filter((visit) => !['COMPLETED', 'DISCHARGED', 'CANCELLED'].includes(visit.status)).length}</strong><small>Ongoing care</small></article>
-        <article className="stat-card"><span>Waiting</span><strong>{visits.filter((visit) => ['REGISTERED', 'WAITING'].includes(visit.status)).length}</strong><small>In the patient queue</small></article>
+        <article className="stat-card"><span>Active visits</span><strong>{summary.active}</strong><small>All clinic visits</small></article>
+        <article className="stat-card"><span>Waiting</span><strong>{summary.waiting}</strong><small>All clinic visits</small></article>
       </section>
 
       {canRegister && <section className="actions-grid">
@@ -248,29 +275,31 @@ export default function Home() {
         <article className="panel">
           <div className="panel-heading"><div><p className="eyebrow">VISIT MANAGEMENT</p><h2>Open a visit</h2></div><span className="panel-symbol">↗</span></div>
           <form onSubmit={createVisit} className="form-grid">
-            <label className="full">Patient<select name="patientId" required defaultValue=""><option value="" disabled>Select a patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.patientNumber} — {patient.firstName} {patient.lastName}</option>)}</select></label>
+            <RecordPicker kind="patients" name="patientId" label="Patient"/>
             <label>Visit type<select name="type" defaultValue="OUTPATIENT"><option value="OUTPATIENT">Outpatient</option><option value="INPATIENT">Inpatient</option></select></label>
             <label>Reason<input name="reason" maxLength={1000} required /></label>
-            <button className="wide-button" disabled={busy || patients.length === 0}>Open visit</button>
+            <button className="wide-button" disabled={busy}>Open visit</button>
           </form>
         </article>
       </section>
 
       }
       <section className="panel patient-panel">
-        <div className="panel-heading list-heading"><div><p className="eyebrow">PATIENT REGISTER</p><h2>Patients &amp; visits</h2></div><input className="search" value={query} onChange={(event) => { setQuery(event.target.value); void refresh(event.target.value).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Search failed.')); }} placeholder="Search name, ID, or phone" aria-label="Search patients" /></div>
+        <div className="panel-heading list-heading"><div><p className="eyebrow">PATIENT REGISTER</p><h2>Patients &amp; visits</h2></div><input className="search" value={query} onChange={(event) => { setQuery(event.target.value);setPage(1);setPatientPage(1); }} placeholder="Search name or patient number" aria-label="Search patients" /></div>
         <div className="table-wrap">
           <table>
             <thead><tr><th>Patient</th><th>Patient ID</th><th>Phone</th><th>Visit</th><th>Type</th><th>Status</th>{canWorkflow && <th>Workflow</th>}</tr></thead>
             <tbody>
-              {visibleVisits.map((visit) => <tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.reason}</small></td><td>{visit.patient.patientNumber}</td><td>{visit.patient.phone ?? '—'}</td><td>{visit.visitNumber}</td><td>{visit.type.replace('_', ' ')}</td><td><span className={`status ${visit.status.toLowerCase()}`}>{visit.status.replaceAll('_', ' ')}</span></td>{canWorkflow && <td><VisitWorkflow visit={visit} onSaved={() => refresh(query)} /></td>}</tr>)}
+              {visibleVisits.map((visit) => <tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.reason}</small></td><td>{visit.patient.patientNumber}</td><td>{visit.patient.phone ?? '—'}</td><td>{visit.visitNumber}</td><td>{visit.type.replace('_', ' ')}</td><td><span className={`status ${visit.status.toLowerCase()}`}>{visit.status.replaceAll('_', ' ')}</span></td>{canWorkflow && <td><VisitWorkflow role={user.role} visit={visit} onSaved={() => refresh(query)} /></td>}</tr>)}
               {visibleVisits.length === 0 && <tr><td colSpan={canWorkflow ? 7 : 6} className="empty">No visits yet. Register a patient, then open a visit.</td></tr>}
             </tbody>
           </table>
         </div>
+        <nav className="inline-form" aria-label="Visit pages"><button className="quiet-button" disabled={page===1} onClick={()=>setPage(p=>p-1)}>Previous visits</button><span>Page {page}</span><button className="quiet-button" disabled={visits.length<50} onClick={()=>setPage(p=>p+1)}>Next visits</button></nav>
         <div className="patient-list">
-          {patients.map((patient) => <div className="patient-row" key={patient.id}><span className="avatar">{patient.firstName[0]}{patient.lastName[0]}</span><span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.patientNumber} · {patient.phone ?? 'No phone'}</small></span><PatientChart id={patient.id} /></div>)}
+          {patients.map((patient) => <div className="patient-row" key={patient.id}><span className="avatar">{patient.firstName[0]}{patient.lastName[0]}</span><span><strong>{patient.firstName} {patient.lastName}</strong><small>{patient.patientNumber} · {patient.phone ?? 'No phone'}</small></span><PatientChart id={patient.id} role={user.role} onChanged={() => refresh(query)} /></div>)}
           {patients.length === 0 && <p className="empty">No patients found.</p>}
+          {canPerform(user.role,'patients.read') && <nav className="inline-form" aria-label="Patient pages"><button className="quiet-button" disabled={patientPage===1} onClick={()=>setPatientPage(p=>p-1)}>Previous patients</button><span>Page {patientPage} · {patientTotal} patients</span><button className="quiet-button" disabled={patientPage*50>=patientTotal} onClick={()=>setPatientPage(p=>p+1)}>Next patients</button></nav>}
         </div>
       </section>
       </>}
@@ -280,17 +309,10 @@ export default function Home() {
   );
 }
 
-const transitions: Record<string,string[]> = { REGISTERED:['WAITING','IN_PROGRESS','ADMITTED','CANCELLED'], WAITING:['IN_PROGRESS','REFERRED','ADMITTED','CANCELLED'], IN_PROGRESS:['WAITING','REFERRED','ADMITTED','UNDER_OBSERVATION','COMPLETED','DISCHARGED'], REFERRED:['WAITING','IN_PROGRESS','ADMITTED','CANCELLED'], ADMITTED:['IN_PROGRESS','UNDER_OBSERVATION','COMPLETED','DISCHARGED'], UNDER_OBSERVATION:['IN_PROGRESS','COMPLETED','DISCHARGED'], COMPLETED:['DISCHARGED'], DISCHARGED:[], CANCELLED:[] };
-function VisitWorkflow({visit,onSaved}:{visit:Visit;onSaved:()=>Promise<void>}) {
+function VisitWorkflow({visit,onSaved,role}:{visit:Visit;onSaved:()=>Promise<void>;role:string}) {
  const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [history,setHistory]=useState<{id:string;toStatus:string;note?:string;changedAt:string;changedBy:{firstName:string;lastName:string}}[]|null>(null);
  return <><form className="workflow-form" onSubmit={async e=>{ e.preventDefault();const form=e.currentTarget;const data=new FormData(form);setBusy(true);setError('');try{await api(`/visits/${visit.id}/status`,{method:'POST',body:JSON.stringify({status:data.get('status'),note:data.get('note')||undefined})});await onSaved();form.reset();}catch(err){setError(err instanceof Error?err.message:'Unable to update visit.');}finally{setBusy(false);} }}>
- {(transitions[visit.status]??[]).length>0 && <><select name="status" required defaultValue="" aria-label="Next visit status"><option value="" disabled>Move visit to…</option>{transitions[visit.status].map(s=><option key={s}>{s}</option>)}</select><input name="note" placeholder="Workflow note" aria-label="Workflow note" maxLength={500}/><button className="quiet-button" disabled={busy}>Update</button></>}
+ {visitTransitionsFor(role,visit.status).length>0 && <><select name="status" required defaultValue="" aria-label="Next visit status"><option value="" disabled>Move visit to…</option>{visitTransitionsFor(role,visit.status).map(s=><option key={s}>{s}</option>)}</select><input name="note" placeholder="Workflow note" aria-label="Workflow note" maxLength={500}/><button className="quiet-button" disabled={busy}>Update</button></>}
  </form><button type="button" className="quiet-button" onClick={async()=>{try{setHistory(await api('/visits/'+visit.id+'/history'));}catch(e){setError(e instanceof Error?e.message:'Unable to load history.');}}}>Workflow history</button>{history && <div className="workflow-history">{history.map(h=><p key={h.id}>{h.toStatus.replaceAll('_',' ')} · {new Date(h.changedAt).toLocaleString('en-KE')}<br/>{h.changedBy.firstName} {h.changedBy.lastName}{h.note && <><br/>{h.note}</>}</p>)}</div>}{error && <p className="alert error" role="alert">{error}</p>}</>;
-}
-
-function PatientChart({id}:{id:string}) {
- const [patient,setPatient]=useState<{firstName:string;lastName:string;dateOfBirth?:string;gender:string;allergies?:string;medicalAlerts?:string;emergencyContact?:string;nextOfKin?:string;visits:{id:string;visitNumber:string;status:string;reason:string}[]}|null>(null);
- const [error,setError]=useState('');const [open,setOpen]=useState(false);
- return <><button type="button" className="quiet-button" onClick={async()=>{setOpen(true);setError('');try{setPatient(await api('/patients/'+id));}catch(e){setError(e instanceof Error?e.message:'Unable to load patient.');}}}>View record</button>{open && <AnimatedDialog title="Patient record" onClose={()=>setOpen(false)}>{error && <p className="alert error" role="alert">{error}</p>}{patient ? <><h2>{patient.firstName} {patient.lastName}</h2><p>Born: {patient.dateOfBirth ? new Date(patient.dateOfBirth).toLocaleDateString('en-KE') : 'Not recorded'} · {patient.gender.replaceAll('_',' ')}</p><p><b>Allergies:</b> {patient.allergies || 'Not recorded'}</p><p><b>Medical alerts:</b> {patient.medicalAlerts || 'Not recorded'}</p><p>Emergency contact: {patient.emergencyContact || 'Not recorded'}</p><p>Next of kin: {patient.nextOfKin || 'Not recorded'}</p><h3>Visit history</h3>{patient.visits.map(v=><p key={v.id}>{v.visitNumber} · {v.status.replaceAll('_',' ')}<br/>{v.reason}</p>)}{patient.visits.length===0 && <p>No visits yet.</p>}</> : !error && <LoadingState label="Loading patient record…" />}</AnimatedDialog>}</>;
 }

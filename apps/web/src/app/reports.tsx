@@ -51,15 +51,17 @@ function exportReport(report: Report) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function Reports() {
+export default function Reports({ active = true }: { active?: boolean }) {
   const [draft, setDraft] = useState<Filters>({ ...empty });
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const request = useRef(0);
+  const applied = useRef<Filters>({ ...empty });
   const load = useCallback(async (filters: Filters) => {
     const id = ++request.current;
     if (filters.from && filters.to && filters.from > filters.to) { setError('From date must be on or before the to date.'); setLoading(false); return; }
+    applied.current = filters;
     setLoading(true); setError('');
     const query = new URLSearchParams();
     Object.entries(filters).forEach(([key,value]) => { if (value) query.set(key,value); });
@@ -67,7 +69,7 @@ export default function Reports() {
     catch (e) { if (id === request.current) setError(e instanceof Error ? e.message : 'Unable to load reports.'); }
     finally { if (id === request.current) setLoading(false); }
   }, []);
-  useEffect(() => { void load({ ...empty }); return () => { request.current++; }; }, [load]);
+  useEffect(() => { if (active) void load(applied.current); return () => { request.current++; }; }, [active, load]);
   function apply(event: FormEvent<HTMLFormElement>) { event.preventDefault(); void load(draft); }
   function preset(mode: 'today' | 'month' | 'all') {
     const date = today();
@@ -95,7 +97,9 @@ export default function Reports() {
       <p className="subtle report-filter-note">Dates use Nairobi time. Visit status filters visits and patients served; care department filters care entries; collection method filters recorded collections. Outstanding balances and current stock alerts always cover all dates.</p>
     </form>
     {error && <p className="alert error" role="alert">{error}</p>}
-    {loading ? <LoadingState label="Preparing your reports…"/> : report && <>
+    {loading && !report && <LoadingState label="Preparing your reports…"/>}
+    {report && <>
+      {loading && <p className="subtle" role="status">Updating report… Showing the previous results until the update finishes.</p>}
       <div className="report-period" role="status"><span>{period}{report.filters.status && ` · Visits: ${label(report.filters.status)}`}{report.filters.department && ` · Care: ${report.filters.department}`}{report.filters.method && ` · Collections: ${label(report.filters.method)}`}</span><small>Updated {new Date(report.generatedAt).toLocaleString('en-KE',{timeZone:'Africa/Nairobi'})}</small></div>
       {error && <p className="subtle">Showing the last successfully loaded report. Its applied filters are displayed above.</p>}
       <div className="stats">{stats.map(([name,value])=><article className="stat-card" key={name}><span>{name}</span><strong>{value}</strong></article>)}</div>

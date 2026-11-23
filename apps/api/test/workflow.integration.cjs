@@ -14,9 +14,9 @@ test('PostgreSQL patient-to-discharge workflow, rollback and concurrent payments
  try {
   actor=await db.user.create({data:{email:`integration-${randomUUID()}@example.test`,passwordHash:'unused-test-only',firstName:'Test',lastName:'Operator',role:'SUPER_ADMIN'}});
   const user={sub:actor.id,role:actor.role};
-  patient=await patients.create({firstName:'Integration',lastName:'Patient'},actor.id);
-  visit=await visits.create({patientId:patient.id,type:'OUTPATIENT',reason:'Integration check'},actor.id);
-  await visits.updateStatus(visit.id,{status:'IN_PROGRESS'},actor.id);
+  patient=await patients.create({firstName:'Integration',lastName:'Patient'},actor.id,'SUPER_ADMIN');
+  visit=await visits.create({patientId:patient.id,type:'OUTPATIENT',reason:'Integration check'},actor.id,'SUPER_ADMIN');
+  await visits.updateStatus(visit.id,{status:'IN_PROGRESS'},actor.id,'SUPER_ADMIN');
   await ops.care({visitId:visit.id,department:'TRIAGE',summary:'Vitals recorded',details:{temperature:37,pulse:80}},user);
   const lab=await ops.lab({visitId:visit.id,testName:'Test order'},user);
   await ops.result(lab.id,'Test result',user);
@@ -31,7 +31,7 @@ test('PostgreSQL patient-to-discharge workflow, rollback and concurrent payments
   assert.equal((await db.payment.aggregate({where:{invoiceId:invoice.id},_sum:{amountCents:true}}))._sum.amountCents,7500);
   const audits=await db.auditLog.count({where:{userId:actor.id,action:'PAYMENT_RECORDED'}});assert.equal(audits,1,'Rejected payment must not add an audit entry.');
   await ops.payment(invoice.id,{amountCents:2500,method:'CASH',reference:`integration-${randomUUID()}`},user);
-  await visits.updateStatus(visit.id,{status:'COMPLETED'},actor.id);await visits.updateStatus(visit.id,{status:'DISCHARGED'},actor.id);
+  await visits.updateStatus(visit.id,{status:'COMPLETED'},actor.id,'SUPER_ADMIN');await visits.updateStatus(visit.id,{status:'DISCHARGED'},actor.id,'SUPER_ADMIN');
   await assert.rejects(ops.care({visitId:visit.id,department:'CLINICAL',summary:'Closed',details:{}},user),{status:400});
   assert.equal((await visits.history(visit.id)).length,4);
  } finally {

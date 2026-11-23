@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Res, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { CurrentUser } from './current-user.decorator';
 import { AuthenticatedUser } from './auth.types';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
+import { ServiceAuthorized } from './service-authorized.decorator';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 const COOKIE_NAME = 'cms_session';
 const COOKIE_OPTIONS = {
@@ -17,6 +19,7 @@ const COOKIE_OPTIONS = {
 };
 
 @Controller('auth')
+@ServiceAuthorized()
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
@@ -29,14 +32,23 @@ export class AuthController {
     return { user: result.user };
   }
 
+  @Public()
   @Post('logout')
-  logout(@Res({ passthrough: true }) response: Response) {
+  async logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     response.clearCookie(COOKIE_NAME, {
       path: COOKIE_OPTIONS.path,
       sameSite: COOKIE_OPTIONS.sameSite,
       secure: COOKIE_OPTIONS.secure,
     });
+    await this.auth.signOut(request.cookies?.[COOKIE_NAME]);
     return { success: true };
+  }
+
+  @Post('password')
+  async changePassword(@Body() body: ChangePasswordDto, @CurrentUser() user: AuthenticatedUser, @Res({passthrough:true}) response: Response) {
+    await this.auth.changePassword(user.sub,body.currentPassword,body.password);
+    response.clearCookie(COOKIE_NAME,{path:COOKIE_OPTIONS.path,sameSite:COOKIE_OPTIONS.sameSite,secure:COOKIE_OPTIONS.secure});
+    return {success:true};
   }
 
   @Get('me')

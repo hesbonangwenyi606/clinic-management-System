@@ -1,5 +1,7 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { VisitStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, UserRole, VisitStatus } from '@prisma/client';
+import { visitTransitionsFor, rolesFor } from '@cms/access';
+import { ListQuery, pagination } from '../common/pagination';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
@@ -21,24 +23,34 @@ const ALLOWED_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
 export class VisitsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(statusValue?: string) {
+  async list(statusValue?: string, role?: UserRole, query: ListQuery = {}) {
+    const {skip,take,search} = pagination(query);
     let status: VisitStatus | undefined;
     if (statusValue) {
-      if (!Object.values(VisitStatus).includes(statusValue as VisitStatus)) {
+      if (statusValue !== 'OPEN' && !Object.values(VisitStatus).includes(statusValue as VisitStatus)) {
         throw new BadRequestException('Unknown visit status.');
       }
-      status = statusValue as VisitStatus;
+      if(statusValue !== 'OPEN') status = statusValue as VisitStatus;
     }
     return this.prisma.visit.findMany({
-      where: status ? { status } : undefined,
-      orderBy: { arrivedAt: 'desc' },
-      take: 100,
-      include: {
+      where: { status:statusValue==='OPEN'?{notIn:['COMPLETED','DISCHARGED','CANCELLED']}:status, ...(search ? {OR:[{visitNumber:{contains:search,mode:'insensitive'}},{patient:{OR:[{firstName:{contains:search,mode:'insensitive'}},{lastName:{contains:search,mode:'insensitive'}},{patientNumber:{contains:search,mode:'insensitive'}}]}}]} : {}) },
+      orderBy: [{ arrivedAt: 'desc' },{id:'desc'}],
+      skip, take,
+      select: {
+        id:true, visitNumber:true, type:true, status:true, arrivedAt:true,
+        reason:!!role && rolesFor('patients.read').includes(role),
         patient: {
-          select: { id: true, patientNumber: true, firstName: true, lastName: true, phone: true },
+          select: { id: true, patientNumber: true, firstName: true, lastName: true, phone:!!role && rolesFor('patients.read').includes(role) },
         },
       },
     });
+  }
+  async summary() {
+    const [active,waiting] = await this.prisma.$transaction([
+      this.prisma.visit.count({where:{status:{notIn:['COMPLETED','DISCHARGED','CANCELLED']}}}),
+      this.prisma.visit.count({where:{status:{in:['REGISTERED','WAITING']}}}),
+    ],{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
+    return {active,waiting};
   }
 
   async history(id: string) {
@@ -49,13 +61,13 @@ export class VisitsService {
 
   async create(data: CreateVisitDto, userId: string) {
     if (!data.reason.trim()) throw new BadRequestException('Visit reason cannot be blank.');
-    const patient = await this.prisma.patient.findUnique({ where: { id: data.patientId }, select: { id: true } });
-    if (!patient) throw new NotFoundException('Patient was not found.');
-
     return this.prisma.$transaction(async (transaction) => {
+      const patient = await transaction.patient.findUnique({ where: { id: data.patientId }, select: { id: true, archivedAt: true } });
+      if (!patient) throw new NotFoundException('Patient was not found.');
+      if (patient.archivedAt) throw new BadRequestException('Archived patients cannot open new visits.');
       const visit = await transaction.visit.create({
         data: {
-          visitNumber: `V-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 6).toUpperCase()}`,
+          visitNumber: `V-${randomUUID().toUpperCase()}`,
           patientId: data.patientId,
           type: data.type,
           reason: data.reason.trim(),
@@ -82,15 +94,21 @@ export class VisitsService {
         },
       });
       return visit;
-    });
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
   }
 
-  async updateStatus(id: string, data: UpdateVisitStatusDto, userId: string) {
+  async updateStatus(id: string, data: UpdateVisitStatusDto, userId: string, role: UserRole) {
     return this.prisma.$transaction(async (transaction) => {
       const visit = await transaction.visit.findUnique({ where: { id } });
       if (!visit) throw new NotFoundException('Visit was not found.');
       if (!ALLOWED_TRANSITIONS[visit.status].includes(data.status)) {
         throw new BadRequestException(`Visit cannot move from ${visit.status} to ${data.status}.`);
+      }
+      if (!visitTransitionsFor(role,visit.status).includes(data.status)) throw new ForbiddenException('Your role cannot make this transition.');
+      if(data.status==='ADMITTED')throw new BadRequestException('Use the admission form to assign a bed and clinician.');
+      if(['COMPLETED','DISCHARGED'].includes(data.status)) {
+        const admission=await transaction.admission.findUnique({where:{visitId:id}});
+        if(admission && !admission.dischargedAt)throw new BadRequestException('Use the inpatient discharge form to release the bed and record a summary.');
       }
 
       const changed = await transaction.visit.updateMany({

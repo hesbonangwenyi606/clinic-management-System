@@ -13,6 +13,7 @@
     "test": "npm run build && node --test test/*.test.cjs",
     "db:deploy": "prisma migrate deploy",
     "test:integration": "npm run build && node --test test/*.integration.cjs",
+    "test:integration:full": "npm run build && node --test test/*.integration.cjs test/extended.integration.cjs",
     "verify:access": "node scripts/verify-access.cjs"
   },
   "dependencies": {

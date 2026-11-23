@@ -50,10 +50,21 @@ enum Gender {
 }
 
 model User {
+  expensesRecorded Expense[] @relation("Expense_recordedBy")
+  appointmentsCreated Appointment[] @relation("Appointment_createdBy")
+  paymentsRecorded Payment[] @relation("Payment_recordedBy")
+  invoicesCreated Invoice[] @relation("Invoice_createdBy")
+  prescriptionsDispensed Prescription[] @relation("Prescription_dispensedBy")
+  prescriptionsAuthored Prescription[] @relation("Prescription_prescribedBy")
+  movementsAuthored StockMovement[] @relation("StockMovement_recordedBy")
+  labsResulted LabOrder[] @relation("LabOrder_resultedBy")
+  labsRequested LabOrder[] @relation("LabOrder_requestedBy")
+  careAuthored CareEntry[] @relation("CareEntry_recordedBy")
   id           String       @id @default(uuid()) @db.Uuid
   patientId String? @unique @db.Uuid
   patient Patient? @relation(fields: [patientId], references: [id], onDelete: Restrict)
   email        String       @unique
+  sessionVersion Int @default(0)
   passwordHash String
   firstName    String
   lastName     String
@@ -64,6 +75,10 @@ model User {
   createdVisits Visit[]     @relation("VisitCreator")
   auditEntries AuditLog[]
   workflowEvents WorkflowEvent[] @relation("WorkflowChanger")
+  admissions Admission[]
+  admissionEvents AdmissionEvent[]
+  amendments RecordAmendment[]
+  reversals PaymentReversal[]
 }
 
 model Patient {
@@ -83,8 +98,10 @@ model Patient {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   visits          Visit[]
+  archivedAt DateTime?
   portalAccount User?
   appointments Appointment[]
+  @@index([archivedAt, createdAt])
 }
 
 model Visit {
@@ -106,12 +123,15 @@ model Visit {
   labOrders LabOrder[]
   invoices Invoice[]
   prescriptions Prescription[]
+  admission Admission?
 
   @@index([patientId, createdAt])
   @@index([status, arrivedAt])
 }
 
 model CareEntry {
+  author User @relation("CareEntry_recordedBy", fields:[recordedBy], references:[id], onDelete:Restrict)
+  amendments RecordAmendment[]
   id String @id @default(uuid()) @db.Uuid
   visitId String @db.Uuid
   visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
@@ -121,9 +141,14 @@ model CareEntry {
   recordedBy String @db.Uuid
   createdAt DateTime @default(now())
   @@index([visitId, createdAt])
+  @@index([department, createdAt])
+  @@index([recordedBy])
 }
 
 model LabOrder {
+  resultAuthor User? @relation("LabOrder_resultedBy", fields:[resultedBy], references:[id], onDelete:Restrict)
+  requester User @relation("LabOrder_requestedBy", fields:[requestedBy], references:[id], onDelete:Restrict)
+  amendments RecordAmendment[]
   id String @id @default(uuid()) @db.Uuid
   visitId String @db.Uuid
   visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
@@ -134,6 +159,10 @@ model LabOrder {
   resultedBy String? @db.Uuid
   resultedAt DateTime?
   createdAt DateTime @default(now())
+  @@index([visitId, createdAt])
+  @@index([status, createdAt])
+  @@index([requestedBy])
+  @@index([resultedBy])
 }
 
 model StockItem {
@@ -149,6 +178,7 @@ model StockItem {
 }
 
 model StockMovement {
+  author User @relation("StockMovement_recordedBy", fields:[recordedBy], references:[id], onDelete:Restrict)
   id String @id @default(uuid()) @db.Uuid
   stockItemId String @db.Uuid
   stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
@@ -156,9 +186,13 @@ model StockMovement {
   reason String
   recordedBy String @db.Uuid
   createdAt DateTime @default(now())
+  @@index([stockItemId, createdAt])
+  @@index([recordedBy])
 }
 
 model Prescription {
+  dispenser User? @relation("Prescription_dispensedBy", fields:[dispensedBy], references:[id], onDelete:Restrict)
+  prescriber User @relation("Prescription_prescribedBy", fields:[prescribedBy], references:[id], onDelete:Restrict)
   id String @id @default(uuid()) @db.Uuid
   visitId String @db.Uuid
   visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
@@ -170,9 +204,15 @@ model Prescription {
   dispensedBy String? @db.Uuid
   dispensedAt DateTime?
   createdAt DateTime @default(now())
+  @@index([visitId, createdAt])
+  @@index([stockItemId])
+  @@index([dispensedAt, createdAt])
+  @@index([prescribedBy])
+  @@index([dispensedBy])
 }
 
 model Invoice {
+  creator User @relation("Invoice_createdBy", fields:[createdBy], references:[id], onDelete:Restrict)
   id String @id @default(uuid()) @db.Uuid
   visitId String @db.Uuid
   visit Visit @relation(fields: [visitId], references: [id], onDelete: Restrict)
@@ -181,9 +221,12 @@ model Invoice {
   createdBy String @db.Uuid
   createdAt DateTime @default(now())
   payments Payment[]
+  @@index([visitId, createdAt])
+  @@index([createdBy])
 }
 
 model Payment {
+  recorder User @relation("Payment_recordedBy", fields:[recordedBy], references:[id], onDelete:Restrict)
   id String @id @default(uuid()) @db.Uuid
   invoiceId String @db.Uuid
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
@@ -192,9 +235,14 @@ model Payment {
   reference String @unique
   recordedBy String @db.Uuid
   createdAt DateTime @default(now())
+  reversal PaymentReversal?
+  @@index([invoiceId])
+  @@index([createdAt])
+  @@index([recordedBy])
 }
 
 model Appointment {
+  creator User @relation("Appointment_createdBy", fields:[createdBy], references:[id], onDelete:Restrict)
   id String @id @default(uuid()) @db.Uuid
   patientId String @db.Uuid
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
@@ -204,6 +252,8 @@ model Appointment {
   createdBy String @db.Uuid
   createdAt DateTime @default(now())
   @@index([scheduledAt, status])
+  @@index([patientId])
+  @@index([createdBy])
 }
 
 model WorkflowEvent {
@@ -234,6 +284,7 @@ model AuditLog {
 }
 
 model Expense {
+  recorder User @relation("Expense_recordedBy", fields:[recordedBy], references:[id], onDelete:Restrict)
  id String @id @default(uuid()) @db.Uuid
  description String
  category String
@@ -242,4 +293,68 @@ model Expense {
  incurredAt DateTime
  recordedBy String @db.Uuid
  createdAt DateTime @default(now())
+  @@index([incurredAt])
+  @@index([recordedBy])
+}
+
+model Bed {
+  id String @id @default(uuid()) @db.Uuid
+  ward String
+  name String
+  active Boolean @default(true)
+  admissions Admission[]
+  @@unique([ward, name])
+}
+
+model Admission {
+  id String @id @default(uuid()) @db.Uuid
+  visitId String @unique @db.Uuid
+  visit Visit @relation(fields:[visitId],references:[id],onDelete:Restrict)
+  bedId String @db.Uuid
+  bed Bed @relation(fields:[bedId],references:[id],onDelete:Restrict)
+  clinicianId String @db.Uuid
+  clinician User @relation(fields:[clinicianId],references:[id],onDelete:Restrict)
+  admittedAt DateTime @default(now())
+  dischargedAt DateTime?
+  dischargeSummary String?
+  events AdmissionEvent[]
+  @@index([bedId, dischargedAt])
+}
+
+model AdmissionEvent {
+  id String @id @default(uuid()) @db.Uuid
+  admissionId String @db.Uuid
+  admission Admission @relation(fields:[admissionId],references:[id],onDelete:Restrict)
+  action String
+  details String
+  recordedBy String @db.Uuid
+  actor User @relation(fields:[recordedBy],references:[id],onDelete:Restrict)
+  createdAt DateTime @default(now())
+  @@index([admissionId, createdAt])
+}
+
+model RecordAmendment {
+  id String @id @default(uuid()) @db.Uuid
+  careEntryId String? @db.Uuid
+  careEntry CareEntry? @relation(fields:[careEntryId],references:[id],onDelete:Restrict)
+  labOrderId String? @db.Uuid
+  labOrder LabOrder? @relation(fields:[labOrderId],references:[id],onDelete:Restrict)
+  text String
+  reason String
+  recordedBy String @db.Uuid
+  actor User @relation(fields:[recordedBy],references:[id],onDelete:Restrict)
+  createdAt DateTime @default(now())
+  @@index([careEntryId, createdAt])
+  @@index([labOrderId, createdAt])
+}
+
+model PaymentReversal {
+  id String @id @default(uuid()) @db.Uuid
+  paymentId String @unique @db.Uuid
+  payment Payment @relation(fields:[paymentId],references:[id],onDelete:Restrict)
+  reason String
+  recordedBy String @db.Uuid
+  actor User @relation(fields:[recordedBy],references:[id],onDelete:Restrict)
+  createdAt DateTime @default(now())
+  @@index([createdAt])
 }

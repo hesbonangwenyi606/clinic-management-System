@@ -6,7 +6,7 @@ const { resolve } = require('node:path');
 require('dotenv').config({ path: resolve(__dirname, '../../../.env') });
 const { PrismaClient } = require('@prisma/client');
 const { JwtService } = require('@nestjs/jwt');
-const { hash } = require('bcryptjs');
+const { hash, compare } = require('bcryptjs');
 const db = new PrismaClient();
 const jwt = new JwtService({ secret: process.env.JWT_SECRET });
 const base = `http://localhost:${process.env.CMS_API_PORT || 3001}/api/v1`;
@@ -32,6 +32,46 @@ async function main() {
       users.push({ ...user, token: jwt.sign({ sub: user.id }, { expiresIn: '5m' }) });
     }
     const [admin, clinicAdmin, reception, ...clinicians] = users;
+    const employeePassword=randomUUID();
+    const employee=await request(admin,'POST','/operations/staff',201,{firstName:'Employee',lastName:'Verification',email:`employee-check-${randomUUID()}@example.test`,password:employeePassword,role:'RECEPTIONIST'});
+    users.push(employee);
+    assert.equal(employee.password,undefined);assert.equal(employee.passwordHash,undefined);
+    const savedEmployee=await db.user.findUnique({where:{id:employee.id}});
+    assert.equal(await compare(employeePassword,savedEmployee.passwordHash),true);
+    const login=await fetch(base+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:process.env.CMS_WEB_ORIGIN},body:JSON.stringify({email:employee.email,password:employeePassword})});
+    assert.equal(login.status,201,'The newly created employee must be able to sign in.');checks++;
+    const loginResult=await login.json();assert.equal(loginResult.user.role,'RECEPTIONIST');
+    employee.token=login.headers.get('set-cookie').split(';')[0].split('=').slice(1).join('=');
+    await request(employee,'GET','/patients',200);
+    await request(employee,'GET','/operations/staff',403);
+    await request(reception,'POST','/operations/staff',403,{firstName:'Forbidden',lastName:'Write',email:`forbidden-${randomUUID()}@example.test`,password:employeePassword,role:'RECEPTIONIST'});
+    const newEmail=`updated-employee-${randomUUID()}@example.test`;
+    await request(admin,'PATCH','/operations/staff/'+employee.id,200,{firstName:'Updated',lastName:'Employee',email:newEmail});employee.email=newEmail;
+    await request(employee,'PATCH','/operations/staff/'+employee.id,403,{firstName:'Forbidden',lastName:'Change',email:newEmail});
+    await request(admin,'PATCH','/operations/staff/'+employee.id,409,{firstName:'Updated',lastName:'Employee',email:admin.email});
+    const newPassword=randomUUID();
+    await request(admin,'POST','/operations/staff/'+employee.id+'/password',201,{password:newPassword});
+    await request(employee,'GET','/auth/me',401);
+    async function employeeLogin(password,expected) {
+      const response=await fetch(base+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:process.env.CMS_WEB_ORIGIN},body:JSON.stringify({email:newEmail,password})});
+      assert.equal(response.status,expected);checks++;
+      if (response.ok) employee.token=response.headers.get('set-cookie').split(';')[0].split('=').slice(1).join('=');
+    }
+    await employeeLogin(employeePassword,401);await employeeLogin(newPassword,201);
+    await request(employee,'GET','/auth/me',200);
+    await request(admin,'POST','/operations/staff/'+employee.id+'/deactivate',201);
+    await request(employee,'GET','/auth/me',401);
+    await request(admin,'POST','/operations/staff/'+employee.id+'/reactivate',201);
+    await request(employee,'GET','/auth/me',401);
+    await employeeLogin(newPassword,201);await request(employee,'GET','/auth/me',200);
+    const unused=await request(admin,'POST','/operations/staff',201,{firstName:'Unused',lastName:'Employee',email:`unused-${randomUUID()}@example.test`,password:randomUUID(),role:'RECEPTIONIST'});users.push(unused);
+    const removal=await request(admin,'DELETE','/operations/staff/'+unused.id,200);assert.equal(removal.deleted,true);assert.equal(await db.user.findUnique({where:{id:unused.id}}),null);
+    await request(admin,'DELETE','/operations/staff/'+admin.id,400);
+    await request(clinicAdmin,'DELETE','/operations/staff/'+admin.id,403);
+    await db.auditLog.create({data:{userId:employee.id,action:'EMPLOYEE_TEST_ACTIVITY',entityType:'User',entityId:employee.id}});
+    const retained=await request(admin,'DELETE','/operations/staff/'+employee.id,200);assert.equal(retained.deleted,false);
+    assert.equal((await db.user.findUnique({where:{id:employee.id}})).active,false);
+    assert.equal(await db.auditLog.count({where:{userId:employee.id,action:'EMPLOYEE_TEST_ACTIVITY'}}),1);
     const areas = ['care', 'labs', 'stock', 'movements', 'prescriptions', 'invoices', 'appointments', 'expenses', 'staff', 'reports', 'audit'];
     for (const actor of [admin, clinicAdmin]) for (const area of areas) await request(actor, 'GET', `/operations/${area}`, 200);
     const filtered = await request(admin, 'GET', '/operations/reports?from=2026-11-16&to=2026-11-16&status=COMPLETED&department=CLINICAL&method=CASH', 200);
@@ -54,6 +94,15 @@ async function main() {
     const visit = await request(reception, 'POST', '/visits', 201, { patientId, type: 'OUTPATIENT', reason: 'Temporary permission verification' });
     visitId = visit.id;
     await request(reception, 'GET', `/patients/${patientId}`, 200);
+    await request(reception,'PATCH',`/patients/${patientId}`,200,{firstName:'Updated',lastName:'Patient',phone:'0700000000'});
+    const edited = await request(admin,'GET',`/patients/${patientId}`,200);assert.equal(edited.firstName,'Updated');
+    await request(reception,'DELETE',`/patients/${patientId}`,403);
+    for (const clinician of clinicians) {
+      await request(clinician,'PATCH',`/patients/${patientId}`,403,{firstName:'Forbidden',lastName:'Change'});
+      await request(clinician,'DELETE',`/patients/${patientId}`,403);
+    }
+    await request(admin,'PATCH',`/patients/${patientId}`,400,{firstName:' ',lastName:'Invalid'});
+
     await request(reception, 'GET', `/visits/${visitId}/history`, 200);
     await request(reception, 'POST', `/visits/${visitId}/status`, 403, { status: 'IN_PROGRESS' });
     for (const area of areas) await request(reception, 'GET', `/operations/${area}`, 403);
@@ -69,6 +118,16 @@ async function main() {
       await request(actor, 'POST', '/operations/care', 201, { visitId, department: 'CLINICAL', summary: 'Temporary clinical note', details: {} });
       await request(actor, 'POST', '/operations/stock', 403, { name: 'Forbidden stock', batch: randomUUID(), expiresAt: new Date(Date.now()+86400000).toISOString(), quantity: 1, reorderLevel: 1 });
     }
+
+    const archived = await request(clinicAdmin,'DELETE',`/patients/${patientId}`,200);assert.equal(archived.deleted,false);
+    assert.ok((await db.patient.findUnique({where:{id:patientId}})).archivedAt);
+    assert.equal(await db.visit.count({where:{id:visitId}}),1);
+    const directory = await request(reception,'GET','/patients?search='+patient.patientNumber,200);assert.equal(directory.total,0);
+    await request(reception,'POST','/visits',400,{patientId,type:'OUTPATIENT',reason:'Archived check'});
+    await request(reception,'PATCH',`/patients/${patientId}`,400,{firstName:'Archived',lastName:'Change'});
+    const unusedPatient = await request(admin,'POST','/patients',201,{firstName:'Unused',lastName:'Delete'});
+    const removed = await request(admin,'DELETE','/patients/'+unusedPatient.id,200);assert.equal(removed.deleted,true);
+    await request(admin,'GET','/patients/'+unusedPatient.id,404);
     await request(clinicAdmin, 'POST', `/operations/staff/${reception.id}/role`, 403, { role: 'CLINIC_ADMIN' });
     await request(admin, 'POST', `/operations/staff/${admin.id}/role`, 400, { role: 'RECEPTIONIST' });
     await request(admin, 'POST', `/operations/staff/${reception.id}/role`, 201, { role: 'CLINICIAN_3' });

@@ -30,12 +30,20 @@ Role permissions are defined once in `packages/access` and used by both the API 
 | Role | Access |
 | --- | --- |
 | Super administrator / clinic administrator | All departments, patient registration, visits and staff administration |
-| Receptionist | Register patients, open visits, search and view existing patient records/history. No department tabs, record changes or visit status changes |
+| Receptionist | Register patients, open visits, search, view and edit patient records. No patient deletion, department tabs or visit status changes |
 | Clinician 1, 2 or 3 | Clinical records, Laboratory, Pharmacy stock, Stock usage history, Recovery |
 
 Clinicians can add clinical notes and request laboratory tests. Pharmacy stock, stock usage history and recovery are view-only for clinicians. Prescribing is available within **Clinical records**, with dispensing reserved for pharmacy staff. Other specialist roles retain their department access.
 
 In **Departments & administration ? Staff administration**, an administrator can create accounts with assigned roles or use **Save role** on an existing staff account. Role changes are audited and enforced by the API on the next request, including for users with existing sessions. Refresh or sign in again to update the visible navigation. Only a super administrator may assign/manage clinic administrators; nobody can change their own role, a super administrator's role, or convert a patient account into staff.
+
+## Add employees and assign passwords
+
+Administrators can click **Employees** in the top workspace navigation, or **Departments & administration → Employees & accounts**.
+
+Enter the employee's first name, last name and login email, select their role (including Clinician 1/2/3, receptionist, accountant and specialist roles), then set and confirm a password of at least 14 characters. **Generate password** fills a generated password and its confirmation. Click **Create employee login**, then use **Show** or **Copy login details** in the success card to share the assigned credentials directly with that employee. Credentials remain only in the current page state and disappear when dismissed or when leaving the page. Password hashes stay on the server and existing passwords are never listed.
+
+The employee directory supports name/email search and role/status filters. Use **Edit details** to update names and login email, **Save role** to change department access, **Reset password** to assign new credentials, and **Reactivate** to restore an inactive account. Password resets and deactivation invalidate previous sessions; reactivation does not restore old sessions. **Delete account** requires typing the account email: unused accounts are permanently deleted, while accounts linked to clinic activity are deactivated so their history is preserved. Own accounts and protected administrator accounts cannot be changed through these employee actions. A **Patient portal account** option also lets administrators provision a patient login linked to a recent patient record.
 
 ## Management reports
 
@@ -87,7 +95,8 @@ Compose waits for PostgreSQL, applies migrations, seeds the administrator, then 
 
 All routes below are relative to `/api/v1`; authenticated requests use the session cookie.
 
-- Authentication: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
+- Authentication: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password`
+- Health: `GET /health/live`, `GET /health/ready`
 - Patients: `GET /patients?search=&page=&pageSize=`, `GET /patients/:id`, `POST /patients`
 - Visits: `GET /visits?status=`, `POST /visits`, `POST /visits/:id/status`, `GET /visits/:id/history`
 - Department lists: `GET /operations/:area`, where area is `care`, `labs`, `stock`, `prescriptions`, `invoices`, `movements`, `appointments`, `expenses`, `staff` or `audit`
@@ -97,12 +106,16 @@ All routes below are relative to `/api/v1`; authenticated requests use the sessi
 - Pharmacy: `POST /operations/prescriptions`, `POST /operations/prescriptions/:id/dispense`
 - Billing: `POST /operations/invoices`, `POST /operations/invoices/:id/payments`
 - Appointments: `POST /operations/appointments`, `POST /operations/appointments/:id/status`
+- Employee editing: `PATCH /operations/staff/:id`, `DELETE /operations/staff/:id`, `POST /operations/staff/:id/password`, `POST /operations/staff/:id/reactivate`
 - Staff: `POST /operations/staff`, `POST /operations/staff/:id/deactivate`, `POST /operations/staff/:id/role`
 - Accounting: `POST /operations/expenses`
 - Patient portal: `GET /operations/portal` (patient role; ownership is resolved from the session)
 - Reports: `GET /operations/reports`
+- Inpatient: `/workflows/beds`, `/workflows/clinicians`, `/workflows/admissions`, with transfer/discharge under `/workflows/admissions/:id`
+- Encounter charts and amendments: `/workflows/chart/:visitId`, `/workflows/care/:id/amendments`, `/workflows/labs/:id/amendments`
+- Payment reversal: `POST /workflows/payments/:id/reverse`
 
-Visit and patient selectors show up to 100 recent records; patient search queries the database. Department lists show up to 200 recent records (500 stock batches). Reports aggregate the complete database. Payments accept `CASH`, `MPESA_RECORDED` or `BANK_RECORDED` and an integer `amountCents`.
+Visit, patient and stock selectors query the database with pagination. Department lists return 50 records by default and up to 100 per page. Reports aggregate the complete database. Payments accept `CASH`, `MPESA_RECORDED` or `BANK_RECORDED` and integer `amountCents`.
 
 ## Validation
 
@@ -123,6 +136,12 @@ With the local API running, `npm.cmd run verify:access --workspace @cms/api` che
 
 The integration test creates its own identified records and removes those records afterward. CI provisions PostgreSQL, applies migrations, runs both test suites and builds both applications.
 
+`npm.cmd run test:integration:full --workspace @cms/api` also covers HTTP authorization, amendments, payment reversals, and concurrent bed assignment. It requires a disposable PostgreSQL database ending in `_test` and `CMS_TEST_DATABASE=true`.
+
+Create and inspect backups with PostgreSQL client tools: `node scripts/database-backup.cjs backup`, then `node scripts/database-backup.cjs verify <dump-file>`. Restore drills require `DATABASE_URL` to point to a disposable `_test` database and the exact database name as the final confirmation argument: `node scripts/database-backup.cjs restore-test <dump-file> <database_name_test>`.
+
 ## Integration and release limits
 
 M-Pesa and bank payments are **manual receipt records**, not provider-confirmed transactions. Daraja/bank connections and SMS/email delivery require provider credentials and are not implemented. Patient accounts must be provisioned by a clinic administrator; public signup is disabled. Automatic bank reconciliation, clinician scheduling/capacity allocation and external clinical terminology integration are not implemented. Care entries do not implement prescribing decision support or diagnostic interpretation. Database backups, production monitoring, privacy/compliance review and clinical acceptance testing must be configured for an actual deployment. This implementation has not been approved for live medical use.
+
+Patient records: admins and receptionists can use **View record ? Edit patient** to update patient details. Only the boss and administrators see **Delete patient** or can call the delete API. Deletion requires confirming the patient number. Patients with visits, appointments, or a portal login are archived from the active directory, preserving their history and disabling portal access; unlinked patients are permanently deleted. Archived patients cannot be edited or open new visits/appointments. All changes are audit logged.

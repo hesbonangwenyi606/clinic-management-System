@@ -5,14 +5,16 @@ import { Prisma, UserRole } from '@prisma/client';
 import { hash } from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/auth.types';
-import { ExpenseDto, AppointmentDto, CareDto, InvoiceDto, LabDto, MovementDto, PaymentDto, PrescriptionDto, StaffDto, StockDto } from './operations.dto';
+import { ListQuery, pagination } from '../common/pagination';
+import { isUUID } from 'class-validator';
+import { UpdateEmployeeDto, ExpenseDto, AppointmentDto, CareDto, InvoiceDto, LabDto, MovementDto, PaymentDto, PrescriptionDto, StaffDto, StockDto } from './operations.dto';
 
 const ADMINS = ADMIN_ROLES;
 export const ACCESS: Record<string, string[]> = Object.fromEntries(
   ['care', 'labs', 'stock', 'movements', 'prescriptions', 'invoices', 'appointments', 'expenses', 'staff', 'reports', 'audit'].map(area => [area, rolesFor(area + '.read')]),
 );
 const patient = { select: { patientNumber: true, firstName: true, lastName: true } };
-const visit = { include: { patient } };
+const visit = { select: { id:true, visitNumber:true, status:true, patient } };
 @Injectable()
 export class OperationsService {
   constructor(private readonly db: PrismaService) {}
@@ -38,23 +40,41 @@ export class OperationsService {
   async openVisit(tx: Prisma.TransactionClient, id: string) {
     const record = await tx.visit.findUnique({ where: { id } });
     if (!record) throw new NotFoundException('Visit was not found.');
-    if (['DISCHARGED','CANCELLED'].includes(record.status)) throw new BadRequestException('This visit is closed.');
+    if (['COMPLETED','DISCHARGED','CANCELLED'].includes(record.status)) throw new BadRequestException('This visit is closed.');
     return record;
   }
-  async list(area: string, user: AuthenticatedUser) {
+  async list(area: string, user: AuthenticatedUser, query: ListQuery = {}) {
     this.allow(user, area);
-    const orderBy = { createdAt: 'desc' as const };
+    const { skip, take, search } = pagination(query);
+    if (query.visitId !== undefined && !isUUID(query.visitId)) throw new BadRequestException('Invalid visit ID.');
+    const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+    const text = search ? { contains: search, mode: 'insensitive' as const } : undefined;
+    const visitSearch = text ? { OR: [{visitNumber:text},{patient:{OR:[{firstName:text},{lastName:text},{patientNumber:text}]}}] } : undefined;
+    const visitWhere = { visitId:query.visitId, ...(visitSearch ? {visit:visitSearch} : {}) };
+    const paged = {skip,take};
     switch (area) {
-      case 'care': return this.db.careEntry.findMany({ where: { department: { in: careDepartmentsFor(user.role) } }, include: { visit }, orderBy, take: 200 });
-      case 'labs': return this.db.labOrder.findMany({ include: { visit }, orderBy, take: 200 });
-      case 'stock': return this.db.stockItem.findMany({ orderBy: { name: 'asc' }, take: 500 });
-      case 'movements': return this.db.stockMovement.findMany({ include: { stockItem:true }, orderBy, take:200 });
-      case 'prescriptions': return this.db.prescription.findMany({ include: { visit, stockItem: true }, orderBy, take: 200 });
-      case 'invoices': return this.db.invoice.findMany({ include: { visit, payments: true }, orderBy, take: 200 });
-      case 'appointments': return this.db.appointment.findMany({ include: { patient }, orderBy: { scheduledAt: 'desc' }, take: 200 });
-      case 'expenses': return this.db.expense.findMany({ orderBy, take:200 });
-      case 'staff': return this.db.user.findMany({ select: { id:true, email:true, firstName:true, lastName:true, role:true, active:true }, orderBy: { firstName: 'asc' } });
-      case 'audit': return this.db.auditLog.findMany({ include: { user: { select: { firstName:true, lastName:true } } }, orderBy, take: 200 });
+      case 'care': {
+        const departments = careDepartmentsFor(user.role);
+        if (query.department && !departments.includes(query.department)) throw new ForbiddenException('Department is unavailable.');
+        return this.db.careEntry.findMany({ where: {...visitWhere,department:query.department ?? {in:departments}},include:{visit,amendments:{orderBy:{createdAt:'asc'}}},orderBy,...paged });
+      }
+      case 'labs':
+        if (query.status && !['REQUESTED','RESULTED'].includes(query.status)) throw new BadRequestException('Invalid laboratory status.');
+        return this.db.labOrder.findMany({ where:{...visitWhere,status:query.status},include:{visit,amendments:{orderBy:{createdAt:'asc'}}},orderBy,...paged });
+      case 'stock':
+        if(query.status && query.status!=='AVAILABLE') throw new BadRequestException('Invalid stock status.');
+        return this.db.stockItem.findMany({where:{...(text?{OR:[{name:text},{batch:text}]}:{}),...(query.status==='AVAILABLE'?{quantity:{gt:0},expiresAt:{gt:new Date()}}:{})},orderBy:[{name:'asc'},{expiresAt:'asc'},{id:'asc'}],...paged});
+      case 'movements': return this.db.stockMovement.findMany({where:text?{stockItem:{OR:[{name:text},{batch:text}]}}:undefined,include:{stockItem:true},orderBy,...paged});
+      case 'prescriptions':
+        if (query.status && !['PENDING','DISPENSED'].includes(query.status)) throw new BadRequestException('Invalid prescription status.');
+        return this.db.prescription.findMany({where:{...visitWhere,dispensedAt:query.status==='PENDING'?null:query.status==='DISPENSED'?{not:null}:undefined},include:{visit,stockItem:true},orderBy,...paged});
+      case 'invoices': return this.db.invoice.findMany({where:visitWhere,include:{visit,payments:{include:{reversal:true}}},orderBy,...paged});
+      case 'appointments':
+        if (query.status && !['BOOKED','ATTENDED','CANCELLED'].includes(query.status)) throw new BadRequestException('Invalid appointment status.');
+        return this.db.appointment.findMany({where:{status:query.status,...(text?{patient:{OR:[{firstName:text},{lastName:text},{patientNumber:text}]}}:{})},include:{patient},orderBy:[{scheduledAt:'asc'},{id:'asc'}],...paged});
+      case 'expenses': return this.db.expense.findMany({where:text?{OR:[{description:text},{reference:text}]}:undefined,orderBy,...paged});
+      case 'staff': return this.db.user.findMany({select:{id:true,email:true,firstName:true,lastName:true,role:true,active:true},orderBy:{firstName:'asc'}});
+      case 'audit': return this.db.auditLog.findMany({where:text?{OR:[{action:text},{entityId:text}]}:undefined,include:{user:{select:{firstName:true,lastName:true}}},orderBy,...paged});
       default: throw new NotFoundException('Unknown module.');
     }
   }
@@ -102,7 +122,13 @@ export class OperationsService {
   }
   prescribe(data: PrescriptionDto, user: AuthenticatedUser) {
     this.allow(user, 'prescriptions', rolesFor('prescriptions.create'));
-    return this.transaction(user, 'PRESCRIPTION_CREATED', async tx => { await this.openVisit(tx, data.visitId); return tx.prescription.create({ data: { ...data, prescribedBy:user.sub } }); });
+    return this.transaction(user, 'PRESCRIPTION_CREATED', async tx => {
+      await this.openVisit(tx, data.visitId);
+      const stock = await tx.stockItem.findUnique({where:{id:data.stockItemId}});
+      if (!stock) throw new NotFoundException('Medicine batch was not found.');
+      if (stock.expiresAt <= new Date() || stock.quantity < data.quantity) throw new BadRequestException('Stock is expired or insufficient.');
+      return tx.prescription.create({ data: { ...data, prescribedBy:user.sub } });
+    });
   }
   dispense(id: string, user: AuthenticatedUser) {
     this.allow(user, 'prescriptions', rolesFor('prescriptions.dispense'));
@@ -124,7 +150,7 @@ export class OperationsService {
   payment(id: string, data: PaymentDto, user: AuthenticatedUser) {
     this.allow(user, 'invoices', rolesFor('invoices.payment'));
     return this.transaction(user, 'PAYMENT_RECORDED', async tx => {
-      const invoice = await tx.invoice.findUnique({ where: { id }, include: { payments:true } });
+      const invoice = await tx.invoice.findUnique({ where: { id }, include: { payments:{where:{reversal:null}} } });
       if (!invoice) throw new NotFoundException('Invoice was not found.');
       const paid = invoice.payments.reduce((sum,p) => sum+p.amountCents,0);
       if (paid + data.amountCents > invoice.amountCents) throw new BadRequestException('Payment exceeds outstanding balance.');
@@ -134,7 +160,12 @@ export class OperationsService {
   appointment(data: AppointmentDto, user: AuthenticatedUser) {
     this.allow(user,'appointments',rolesFor('appointments.create'));
     if (new Date(data.scheduledAt) <= new Date()) throw new BadRequestException('Appointment must be in the future.');
-    return this.transaction(user,'APPOINTMENT_BOOKED',tx => tx.appointment.create({ data: { ...data, scheduledAt:new Date(data.scheduledAt), createdBy:user.sub } }));
+    return this.transaction(user,'APPOINTMENT_BOOKED',async tx => {
+      const patient = await tx.patient.findUnique({where:{id:data.patientId},select:{archivedAt:true}});
+      if (!patient) throw new NotFoundException('Patient was not found.');
+      if (patient.archivedAt) throw new BadRequestException('Archived patients cannot book appointments.');
+      return tx.appointment.create({ data: { ...data, scheduledAt:new Date(data.scheduledAt), createdBy:user.sub } });
+    });
   }
   appointmentStatus(id: string, status: string, user: AuthenticatedUser) {
     this.allow(user,'appointments',rolesFor('appointments.create'));
@@ -151,7 +182,16 @@ export class OperationsService {
     if (data.role !== 'PATIENT' && data.patientId) throw new BadRequestException('Only patient accounts may link to a patient record.');
     if (data.role === 'CLINIC_ADMIN' && user.role !== 'SUPER_ADMIN') throw new ForbiddenException('Only a super administrator can assign clinic administrators.');
     const passwordHash = await hash(data.password,12);
-    return this.transaction(user,'STAFF_CREATED',tx => tx.user.create({ data: { email:data.email.trim().toLowerCase(), firstName:data.firstName.trim(), lastName:data.lastName.trim(), role:data.role as UserRole, patientId:data.patientId, passwordHash }, select: { id:true, email:true, role:true } }));
+    return this.transaction(user,'STAFF_CREATED',async tx => {
+      if (data.role === 'PATIENT') await this.activePatient(tx,data.patientId);
+      return tx.user.create({ data: { email:data.email.trim().toLowerCase(), firstName:data.firstName.trim(), lastName:data.lastName.trim(), role:data.role as UserRole, patientId:data.patientId, passwordHash }, select: { id:true, email:true, role:true } });
+    });
+  }
+  private async activePatient(tx: Prisma.TransactionClient, id?: string | null) {
+    if (!id) throw new BadRequestException('A patient record is required.');
+    const record = await tx.patient.findUnique({where:{id},select:{archivedAt:true}});
+    if (!record) throw new NotFoundException('Patient was not found.');
+    if (record.archivedAt) throw new BadRequestException('Archived patients cannot access the portal.');
   }
   updateRole(id: string, role: string, user: AuthenticatedUser) {
     this.allow(user,'staff',rolesFor('staff.update'));
@@ -165,6 +205,60 @@ export class OperationsService {
       return tx.user.update({where:{id},data:{role:role as UserRole},select:{id:true,role:true}});
     });
   }
+  private async manageableEmployee(tx: Prisma.TransactionClient, id: string, user: AuthenticatedUser) {
+    const target = await tx.user.findUnique({where:{id}});
+    if (!target) throw new NotFoundException('Employee account was not found.');
+    if (target.role === 'SUPER_ADMIN' || (target.role === 'CLINIC_ADMIN' && user.role !== 'SUPER_ADMIN')) throw new ForbiddenException('This administrator account cannot be managed by your account.');
+    return target;
+  }
+  updateEmployee(id: string, data: UpdateEmployeeDto, user: AuthenticatedUser) {
+    this.allow(user,'staff',rolesFor('staff.update'));
+    if (id === user.sub) throw new BadRequestException('You cannot edit your own account here.');
+    if (!data.firstName.trim() || !data.lastName.trim()) throw new BadRequestException('Employee names cannot be blank.');
+    return this.transaction(user,'STAFF_UPDATED',async tx=>{
+      await this.manageableEmployee(tx,id,user);
+      return tx.user.update({where:{id},data:{firstName:data.firstName.trim(),lastName:data.lastName.trim(),email:data.email.trim().toLowerCase()},select:{id:true,email:true,firstName:true,lastName:true,role:true,active:true}});
+    });
+  }
+  async resetEmployeePassword(id: string, password: string, user: AuthenticatedUser) {
+    this.allow(user,'staff',rolesFor('staff.update'));
+    if (id === user.sub) throw new BadRequestException('You cannot reset your own password here.');
+    if (password.length < 14 || Buffer.byteLength(password) > 72) throw new BadRequestException('Use at least 14 characters and no more than 72 UTF-8 bytes.');
+    const passwordHash=await hash(password,12);
+    return this.transaction(user,'STAFF_PASSWORD_RESET',async tx=>{
+      await this.manageableEmployee(tx,id,user);
+      return tx.user.update({where:{id},data:{passwordHash,sessionVersion:{increment:1}},select:{id:true,email:true,role:true}});
+    });
+  }
+  reactivate(id: string, user: AuthenticatedUser) {
+    this.allow(user,'staff',rolesFor('staff.update'));
+    if (id === user.sub) throw new BadRequestException('You cannot reactivate your own account.');
+    return this.transaction(user,'STAFF_REACTIVATED',async tx=>{
+      const target = await this.manageableEmployee(tx,id,user);
+      if (target.role === 'PATIENT') await this.activePatient(tx,target.patientId);
+      return tx.user.update({where:{id},data:{active:true,sessionVersion:{increment:1}},select:{id:true,active:true}});
+    });
+  }
+  deleteEmployee(id: string, user: AuthenticatedUser) {
+    this.allow(user,'staff',rolesFor('staff.update'));
+    if (id === user.sub) throw new BadRequestException('You cannot delete your own account.');
+    return this.transaction(user,'STAFF_REMOVED',async tx=>{
+      await this.manageableEmployee(tx,id,user);
+      const activity=await Promise.all([
+        tx.visit.count({where:{createdById:id}}),tx.auditLog.count({where:{userId:id}}),tx.workflowEvent.count({where:{changedById:id}}),
+        tx.careEntry.count({where:{recordedBy:id}}),tx.labOrder.count({where:{OR:[{requestedBy:id},{resultedBy:id}]}}),
+        tx.stockMovement.count({where:{recordedBy:id}}),tx.prescription.count({where:{OR:[{prescribedBy:id},{dispensedBy:id}]}}),
+        tx.invoice.count({where:{createdBy:id}}),tx.payment.count({where:{recordedBy:id}}),tx.appointment.count({where:{createdBy:id}}),tx.expense.count({where:{recordedBy:id}}),
+        tx.admission.count({where:{clinicianId:id}}),tx.admissionEvent.count({where:{recordedBy:id}}),tx.recordAmendment.count({where:{recordedBy:id}}),tx.paymentReversal.count({where:{recordedBy:id}}),
+      ]);
+      if (activity.some(count=>count>0)) {
+        await tx.user.update({where:{id},data:{active:false,sessionVersion:{increment:1}}});
+        return {id,deleted:false,active:false,message:'This account has clinic history. It has been deactivated and its history preserved.'};
+      }
+      await tx.user.delete({where:{id}});
+      return {id,deleted:true,message:'Employee account permanently deleted.'};
+    });
+  }
   deactivate(id: string, user: AuthenticatedUser) {
     this.allow(user,'staff');
     if (id === user.sub) throw new BadRequestException('You cannot deactivate your own account.');
@@ -172,7 +266,7 @@ export class OperationsService {
       const target = await tx.user.findUnique({ where: { id } });
       if (!target) throw new NotFoundException('Staff member was not found.');
       if (target.role === 'SUPER_ADMIN' || (target.role === 'CLINIC_ADMIN' && user.role !== 'SUPER_ADMIN')) throw new ForbiddenException('Only a super administrator can manage clinic administrators.');
-      return tx.user.update({ where: { id }, data: { active:false }, select: { id:true, active:true } });
+      return tx.user.update({ where: { id }, data: { active:false, sessionVersion:{increment:1} }, select: { id:true, active:true } });
     });
   }
 
@@ -186,13 +280,14 @@ export class OperationsService {
     if (user.role !== 'PATIENT') throw new ForbiddenException('Patient access is required.');
     const account = await this.db.user.findUnique({where:{id:user.sub},select:{patientId:true}});
     if (!account?.patientId) throw new NotFoundException('No patient record is linked to this account.');
+    await this.activePatient(this.db,account.patientId);
     return this.db.patient.findUniqueOrThrow({where:{id:account.patientId},select:{
       patientNumber:true,firstName:true,lastName:true,allergies:true,medicalAlerts:true,
       appointments:{orderBy:{scheduledAt:'desc'},take:100,select:{id:true,scheduledAt:true,reason:true,status:true}},
       visits:{orderBy:{createdAt:'desc'},take:100,select:{id:true,visitNumber:true,status:true,reason:true,arrivedAt:true,
-        labOrders:{where:{status:'RESULTED'},select:{id:true,testName:true,result:true,resultedAt:true}},
+        labOrders:{where:{status:'RESULTED'},select:{id:true,testName:true,result:true,resultedAt:true,amendments:{orderBy:{createdAt:'asc'},select:{id:true,text:true,reason:true,createdAt:true}}}},
         prescriptions:{select:{id:true,instructions:true,quantity:true,dispensedAt:true,stockItem:{select:{name:true}}}},
-        invoices:{select:{id:true,description:true,amountCents:true,payments:{select:{amountCents:true,method:true,reference:true}}}},
+        invoices:{select:{id:true,description:true,amountCents:true,payments:{where:{reversal:null},select:{amountCents:true,method:true,reference:true}}}},
       }},
     }});
   }
@@ -204,7 +299,7 @@ export class OperationsService {
       this.db.patient.count({where:{createdAt:dateRange}}),
       this.db.visit.groupBy({by:['status'],orderBy:{status:'asc'},where:visitWhere,_count:true}),
       this.db.invoice.aggregate({where:{createdAt:dateRange},_sum:{amountCents:true}}),
-      this.db.payment.groupBy({by:['method'],orderBy:{method:'asc'},where:{createdAt:dateRange,method},_sum:{amountCents:true}}),
+      this.db.payment.groupBy({by:['method'],orderBy:{method:'asc'},where:{createdAt:dateRange,method,reversal:null},_sum:{amountCents:true}}),
       this.db.stockItem.findMany({select:{id:true,name:true,batch:true,quantity:true,reorderLevel:true,expiresAt:true}}),
       this.db.labOrder.count({where:{status:'REQUESTED',createdAt:dateRange}}),
       this.db.appointment.count({where:{status:'BOOKED',scheduledAt:dateRange}}),
@@ -212,7 +307,7 @@ export class OperationsService {
       this.db.prescription.groupBy({by:['stockItemId'],orderBy:{stockItemId:'asc'},where:{dispensedAt:dateRange ?? {not:null}},_sum:{quantity:true}}),
       this.db.expense.aggregate({where:{incurredAt:dateRange},_sum:{amountCents:true}}),
       this.db.invoice.aggregate({_sum:{amountCents:true}}),
-      this.db.payment.aggregate({_sum:{amountCents:true}}),
+      this.db.payment.aggregate({where:{reversal:null},_sum:{amountCents:true}}),
       this.db.$queryRaw<{count:bigint}[]>(Prisma.sql`SELECT COUNT(DISTINCT "patientId") AS count FROM "Visit" WHERE TRUE
         ${dateRange?.gte ? Prisma.sql`AND "arrivedAt" >= ${dateRange.gte}` : Prisma.empty}
         ${dateRange?.lt ? Prisma.sql`AND "arrivedAt" < ${dateRange.lt}` : Prisma.empty}

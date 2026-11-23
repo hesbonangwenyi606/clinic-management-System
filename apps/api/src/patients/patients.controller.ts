@@ -1,10 +1,11 @@
 import { rolesFor } from '@cms/access';
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query, Body } from '@nestjs/common';
+import { Controller, Patch, Delete, Get, Param, ParseUUIDPipe, Post, Query, Body } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { Roles } from '../auth/roles.decorator';
 import { CreatePatientDto } from './dto/create-patient.dto';
+import { UpdatePatientDto } from './dto/update-patient.dto';
 import { PatientsService } from './patients.service';
 
 @Controller('patients')
@@ -23,8 +24,8 @@ export class PatientsController {
 
   @Get(':id')
   @Roles(...(rolesFor('patients.read') as UserRole[]))
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.patients.get(id);
+  get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.patients.get(id,user.sub);
   }
 
   @Post()
@@ -32,4 +33,16 @@ export class PatientsController {
   create(@Body() body: CreatePatientDto, @CurrentUser() user: AuthenticatedUser) {
     return this.patients.create(body, user.sub);
   }
+  @Patch(':id')
+  @Roles(...(rolesFor('patients.update') as UserRole[]))
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() body: UpdatePatientDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.patients.update(id, body, user.sub);
+  }
+
+  @Delete(':id')
+  @Roles(...(rolesFor('patients.delete') as UserRole[]))
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.patients.remove(id, user.sub);
+  }
+
 }

@@ -10,12 +10,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/api/v1${path}`, {
     ...init,
     credentials: 'include',
+    cache: 'no-store',
     headers: {
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },
   });
   if (!response.ok) {
+    if (response.status === 401 && path !== '/auth/login' && path !== '/auth/password' && typeof window !== 'undefined') window.dispatchEvent(new Event('cms:session-expired'));
     const body = await response.json().catch(() => null) as { message?: string | string[] } | null;
     const message = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
     throw new ApiError(message ?? `Request failed (${response.status}).`, response.status);

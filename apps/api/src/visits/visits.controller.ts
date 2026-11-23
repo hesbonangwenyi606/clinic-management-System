@@ -6,6 +6,7 @@ import { AuthenticatedUser } from '../auth/auth.types';
 import { Roles } from '../auth/roles.decorator';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
+import { ListQuery } from '../common/pagination';
 import { VisitsService } from './visits.service';
 
 @Controller('visits')
@@ -14,9 +15,12 @@ export class VisitsController {
 
   @Get()
   @Roles(...(rolesFor('visits.read') as UserRole[]))
-  list(@Query('status') status?: string) {
-    return this.visits.list(status);
+  list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListQuery) {
+    return this.visits.list(query.status,user.role,query);
   }
+  @Get('summary')
+  @Roles(...(rolesFor('visits.read') as UserRole[]))
+  summary() { return this.visits.summary(); }
 
   @Post()
   @Roles(...(rolesFor('visits.create') as UserRole[]))
@@ -35,6 +39,6 @@ export class VisitsController {
     @Body() body: UpdateVisitStatusDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.visits.updateStatus(id, body, user.sub);
+    return this.visits.updateStatus(id, body, user.sub, user.role);
   }
 }

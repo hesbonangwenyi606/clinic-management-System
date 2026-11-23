@@ -6,3 +6,4 @@ export function canPerform(role: string, action: string): boolean;
 export function modulesFor(role: string): string[];
 export function canAccessModule(role: string, key: string): boolean;
 export function careDepartmentsFor(role: string): string[];
+export function visitTransitionsFor(role: string, from: string): string[];

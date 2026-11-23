@@ -4,7 +4,7 @@ const {OperationsService}=require('../dist/operations/operations.service');
 const {VisitsService}=require('../dist/visits/visits.service');
 const user=(role='SUPER_ADMIN')=>({sub:'actor',role});
 function service(tx={}) {
- const audits=[];tx.auditLog={create:async({data})=>audits.push(data)};
+ const audits=[];tx.auditLog={...tx.auditLog,create:async({data})=>audits.push(data)};
  return {service:new OperationsService({$transaction:async fn=>fn(tx)}),audits};
 }
 test('role checks reject unrelated modules and writes',()=>{
@@ -50,15 +50,15 @@ test('past appointments and self deactivation are rejected',()=>{
 });
 test('terminal visit transitions are rejected',async()=>{
  const s=new VisitsService({$transaction:async fn=>fn({visit:{findUnique:async()=>({status:'DISCHARGED'})}})});
- await assert.rejects(s.updateStatus('v',{status:'IN_PROGRESS'},'actor'),{status:400});
+ await assert.rejects(s.updateStatus('v',{status:'IN_PROGRESS'},'actor','SUPER_ADMIN'),{status:400});
 });
 test('concurrent visit update is rejected without history writes',async()=>{
  const s=new VisitsService({$transaction:async fn=>fn({visit:{findUnique:async()=>({status:'WAITING'}),updateMany:async()=>({count:0})}})});
- await assert.rejects(s.updateStatus('v',{status:'IN_PROGRESS'},'actor'),{status:409});
+ await assert.rejects(s.updateStatus('v',{status:'IN_PROGRESS'},'actor','SUPER_ADMIN'),{status:409});
 });
 test('patient portal resolves ownership from the signed-in account',async()=>{
  let accountQuery,patientQuery;
- const s=new OperationsService({user:{findUnique:async q=>{accountQuery=q;return {patientId:'own-patient'};}},patient:{findUniqueOrThrow:async q=>{patientQuery=q;return {patientNumber:'P-own'};}}});
+ const s=new OperationsService({user:{findUnique:async q=>{accountQuery=q;return {patientId:'own-patient'};}},patient:{findUnique:async()=>({archivedAt:null}),findUniqueOrThrow:async q=>{patientQuery=q;return {patientNumber:'P-own'};}}});
  const result=await s.portal({sub:'signed-in-user',role:'PATIENT'});
  assert.equal(accountQuery.where.id,'signed-in-user');assert.equal(patientQuery.where.id,'own-patient');assert.equal(result.patientNumber,'P-own');
  await assert.rejects(s.portal(user('RECEPTIONIST')),{status:403});
@@ -84,27 +84,29 @@ test('only accounting roles can record expenses',()=>{
 test('administrators see every department and can manage staff roles',()=>{
  const {modulesFor,canPerform}=require('@cms/access');
  for(const role of ['SUPER_ADMIN','CLINIC_ADMIN']) {
-  assert.equal(modulesFor(role).length,14);
+  assert.equal(modulesFor(role).length,15);
   for(const action of ['patients.create','visits.create','visits.status','stock.adjust','staff.update','invoices.create']) assert.equal(canPerform(role,action),true);
  }
 });
-test('receptionists can register and open visits but cannot change records or enter departments',async()=>{
+test('receptionists can register, edit patients and open visits but cannot delete or enter departments',async()=>{
  const {modulesFor,canPerform}=require('@cms/access');const {Reflector}=require('@nestjs/core');const {RolesGuard}=require('../dist/auth/roles.guard');const {VisitsController}=require('../dist/visits/visits.controller');const {PatientsController}=require('../dist/patients/patients.controller');
  assert.deepEqual(modulesFor('RECEPTIONIST'),[]);
- for(const action of ['patients.read','patients.create','visits.read','visits.create','visits.history']) assert.equal(canPerform('RECEPTIONIST',action),true);
- for(const action of ['visits.status','invoices.create','appointments.create','care.clinical','staff.update']) assert.equal(canPerform('RECEPTIONIST',action),false);
+ for(const action of ['patients.read','patients.create','patients.update','visits.read','visits.create','visits.history']) assert.equal(canPerform('RECEPTIONIST',action),true);
+ for(const action of ['patients.delete','visits.status','invoices.create','appointments.create','care.clinical','staff.update']) assert.equal(canPerform('RECEPTIONIST',action),false);
  const {service:s}=service();for(const area of ['care','labs','stock','movements','prescriptions','invoices','appointments','expenses','staff','reports','audit']) await assert.rejects(s.list(area,user('RECEPTIONIST')),{status:403});
  const guard=new RolesGuard(new Reflector());
  function context(controller,method) {return {getHandler:()=>controller.prototype[method],getClass:()=>controller,switchToHttp:()=>({getRequest:()=>({user:user('RECEPTIONIST')})})};}
  assert.equal(guard.canActivate(context(PatientsController,'create')),true);
+ assert.equal(guard.canActivate(context(PatientsController,'update')),true);
+ assert.throws(()=>guard.canActivate(context(PatientsController,'remove')),{status:403});
  assert.equal(guard.canActivate(context(VisitsController,'create')),true);
  assert.equal(guard.canActivate(context(VisitsController,'history')),true);
  assert.throws(()=>guard.canActivate(context(VisitsController,'updateStatus')),{status:403});
 });
-test('all three clinician roles have exactly the requested five department tabs',async()=>{
+test('all three clinician roles have triage and inpatient care alongside their clinical departments',async()=>{
  const {modulesFor,canPerform}=require('@cms/access');
  for(const role of ['CLINICIAN_1','CLINICIAN_2','CLINICIAN_3']) {
-  assert.deepEqual(modulesFor(role),['clinical','labs','stock','movements','recovery']);
+  assert.deepEqual(modulesFor(role),['clinical','triage','labs','stock','movements','recovery','inpatient']);
   const {service:s}=service();
   for(const area of ['care','labs','stock','movements']) assert.doesNotThrow(()=>s.allow(user(role),area));
   for(const area of ['invoices','appointments','expenses','staff','reports','audit']) await assert.rejects(s.list(area,user(role)),{status:403});
@@ -114,7 +116,7 @@ test('all three clinician roles have exactly the requested five department tabs'
 });
 test('care reads are limited to the role departments on the server',async()=>{
  let args;const s=new OperationsService({careEntry:{findMany:async query=>{args=query;return [];}}});
- await s.list('care',user('CLINICIAN_2'));assert.deepEqual(args.where.department.in,['CLINICAL','RECOVERY']);
+ await s.list('care',user('CLINICIAN_2'));assert.deepEqual(args.where.department.in,['TRIAGE','CLINICAL','RECOVERY']);
  await s.list('care',user('SUPER_ADMIN'));assert.deepEqual(args.where.department.in,['TRIAGE','CLINICAL','RECOVERY','CATERING']);
 });
 test('staff role changes are audited and cannot elevate peers or change own role',async()=>{
@@ -149,8 +151,85 @@ test('reports apply scoped filters and retain all-date outstanding balances',asy
  const call=name=>calls.find(c=>c.name===name).args;
  assert.equal(call('visits').where.status,'COMPLETED');assert.equal(call('care').where.department,'RECOVERY');assert.equal(call('payments').where.method,'CASH');
  for(const [name,field] of [['patients','createdAt'],['visits','arrivedAt'],['payments','createdAt'],['care','createdAt'],['dispensed','dispensedAt'],['expenses','incurredAt'],['appointments','scheduledAt']]) assert.equal(call(name).where[field].gte.toISOString(),'2026-11-15T21:00:00.000Z');
- assert.equal(call('allPayments').where,undefined);assert.equal(call('stock').where,undefined);
+ assert.deepEqual(call('allPayments').where,{reversal:null});assert.equal(call('stock').where,undefined);
  assert.equal(result.filters.timezone,'Africa/Nairobi');
  await assert.rejects(new OperationsService(db).reports(user('RECEPTIONIST'),{}),{status:403});
  await assert.rejects(new OperationsService(db).reports(user('CLINICIAN_1'),{}),{status:403});
+});
+
+test('employee creation hashes passwords, returns no secret, and records the administrator',async()=>{
+ const {compare}=require('bcryptjs');let saved;
+ const {service:s,audits}=service({user:{create:async({data})=>{saved=data;return {id:'new-employee',email:data.email,role:data.role};}}});
+ const password='test-employee-password-3927';
+ const result=await s.staff({firstName:'Test',lastName:'Employee',email:'EMPLOYEE@example.test',password,role:'RECEPTIONIST'},user());
+ assert.equal(result.email,'employee@example.test');assert.equal(result.role,'RECEPTIONIST');
+ assert.notEqual(saved.passwordHash,password);assert.equal(await compare(password,saved.passwordHash),true);
+ assert.equal(saved.password,undefined);assert.equal(result.password,undefined);assert.equal(result.passwordHash,undefined);
+ assert.equal(audits[0].userId,'actor');assert.equal(audits[0].action,'STAFF_CREATED');
+ assert.equal(JSON.stringify(audits).includes(password),false);
+ await assert.rejects(s.staff({firstName:'Test',lastName:'Employee',email:'test@example.test',password,role:'RECEPTIONIST'},user('RECEPTIONIST')),{status:403});
+});
+
+test('employee details can be updated without changing roles or passwords',async()=>{
+ let written;const {service:s,audits}=service({user:{findUnique:async()=>({role:'RECEPTIONIST'}),update:async({data})=>{written=data;return {id:'employee',...data};}}});
+ const result=await s.updateEmployee('employee',{firstName:' Jane ',lastName:' Doe ',email:'JANE@EXAMPLE.TEST'},user());
+ assert.equal(result.firstName,'Jane');assert.equal(result.email,'jane@example.test');assert.equal(written.role,undefined);assert.equal(written.passwordHash,undefined);assert.equal(audits[0].action,'STAFF_UPDATED');
+ assert.throws(()=>s.updateEmployee('actor',{firstName:'A',lastName:'B',email:'a@example.test'},user()),{status:400});
+ assert.throws(()=>s.updateEmployee('employee',{firstName:'Jane',lastName:'Doe',email:'jane@example.test'},user('RECEPTIONIST')),{status:403});
+});
+test('password reset changes only the password and revokes previous sessions',async()=>{
+ const {compare}=require('bcryptjs');let data;
+ const {service:s,audits}=service({user:{findUnique:async()=>({role:'RECEPTIONIST'}),update:async args=>{data=args.data;return {id:'employee',email:'jane@example.test',role:'RECEPTIONIST'};}}});
+ const password='new-employee-password-4971';const result=await s.resetEmployeePassword('employee',password,user());
+ assert.equal(await compare(password,data.passwordHash),true);assert.equal(data.sessionVersion.increment,1);assert.equal(result.passwordHash,undefined);assert.equal(result.password,undefined);assert.equal(audits[0].action,'STAFF_PASSWORD_RESET');
+ await assert.rejects(s.resetEmployeePassword('employee','short',user()),{status:400});
+});
+function removalService(activity) {
+ let deleted=false,updated;
+ const counts={};for(const model of ['visit','workflowEvent','careEntry','labOrder','stockMovement','prescription','invoice','payment','appointment','expense','admission','admissionEvent','recordAmendment','paymentReversal']) counts[model]={count:async()=>model==='careEntry'?activity:0};
+ const result=service({...counts,auditLog:{count:async()=>0},user:{findUnique:async()=>({role:'RECEPTIONIST'}),delete:async()=>{deleted=true;return {id:'employee'};},update:async args=>{updated=args.data;return {id:'employee'};}}});
+ return {...result,state:()=>({deleted,updated})};
+}
+test('unused employee accounts are deleted and the actor action is audited',async()=>{
+ const {service:s,state,audits}=removalService(0);const result=await s.deleteEmployee('employee',user());
+ assert.equal(result.deleted,true);assert.equal(state().deleted,true);assert.equal(audits[0].entityId,'employee');
+});
+test('employee accounts with clinic history are deactivated without deleting history',async()=>{
+ const {service:s,state}=removalService(1);const result=await s.deleteEmployee('employee',user());
+ assert.equal(result.deleted,false);assert.equal(state().deleted,false);assert.equal(state().updated.active,false);assert.equal(state().updated.sessionVersion.increment,1);
+});
+test('staff editing, resets, deletion and reactivation protect administrator accounts',async()=>{
+ const {service:s}=service({user:{findUnique:async()=>({role:'SUPER_ADMIN'})}});
+ await assert.rejects(s.updateEmployee('boss',{firstName:'A',lastName:'B',email:'a@example.test'},user()),{status:403});
+ await assert.rejects(s.resetEmployeePassword('boss','long-enough-password',user()),{status:403});
+ await assert.rejects(s.deleteEmployee('boss',user()),{status:403});
+ await assert.rejects(s.reactivate('boss',user()),{status:403});
+ assert.throws(()=>s.deleteEmployee('actor',user()),{status:400});
+ assert.throws(()=>s.reactivate('actor',user()),{status:400});
+});
+test('session guard rejects tokens issued before a password reset',async()=>{
+ const {JwtAuthGuard}=require('../dist/auth/jwt-auth.guard');const request={cookies:{cms_session:'test-token'}};
+ const context={getHandler:()=>null,getClass:()=>null,switchToHttp:()=>({getRequest:()=>request})};
+ const reflector={getAllAndOverride:()=>false};const prisma={user:{findFirst:async()=>({id:'employee',role:'RECEPTIONIST',sessionVersion:2})}};
+ const stale=new JwtAuthGuard({verifyAsync:async()=>({sub:'employee',sessionVersion:1})},reflector,prisma);
+ await assert.rejects(stale.canActivate(context),{status:401});
+ const current=new JwtAuthGuard({verifyAsync:async()=>({sub:'employee',sessionVersion:2})},reflector,prisma);
+ assert.equal(await current.canActivate(context),true);assert.equal(request.user.sub,'employee');
+});
+const {PatientsService}=require('../dist/patients/patients.service');
+test('patient deletion preserves linked history and revokes portal sessions',async()=>{
+ const calls=[];
+ const tx={patient:{findUnique:async()=>({_count:{visits:2,appointments:0},portalAccount:{id:'portal'}}),update:async x=>calls.push(['archive',x]),delete:async()=>assert.fail('History must be preserved')},user:{update:async x=>calls.push(['portal',x])},auditLog:{create:async x=>calls.push(['audit',x])}};
+ const s=new PatientsService({$transaction:async fn=>fn(tx)});
+ const result=await s.remove('patient','admin');assert.equal(result.deleted,false);
+ assert.equal(calls[1][1].data.active,false);assert.deepEqual(calls[1][1].data.sessionVersion,{increment:1});
+ assert.equal(calls[2][1].data.action,'PATIENT_ARCHIVED');
+});
+test('patient editing clears optional fields and rejects archived records',async()=>{
+ let saved;const tx={patient:{findUnique:async()=>({archivedAt:null}),update:async x=>(saved=x.data)},auditLog:{create:async()=>{}}};
+ const s=new PatientsService({$transaction:async fn=>fn(tx)});
+ await s.update('p',{firstName:' Jane ',lastName:' Doe ',email:null,dateOfBirth:null},'admin');
+ assert.equal(saved.firstName,'Jane');assert.equal(saved.email,null);assert.equal(saved.dateOfBirth,null);
+ tx.patient.findUnique=async()=>({archivedAt:new Date()});
+ await assert.rejects(s.update('p',{firstName:'Jane',lastName:'Doe'},'admin'),{status:400});
 });

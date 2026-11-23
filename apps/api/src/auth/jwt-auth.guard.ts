@@ -42,10 +42,14 @@ export class JwtAuthGuard implements CanActivate {
 
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, active: true },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, sessionVersion: true },
     });
-    if (!user || !Object.values(UserRole).includes(user.role)) {
+    if (!user || !Object.values(UserRole).includes(user.role) || (payload.sessionVersion ?? 0) !== user.sessionVersion) {
       throw new UnauthorizedException('Account is unavailable.');
+    }
+    if (user.role === 'PATIENT') {
+      const account = await this.prisma.user.findUnique({where:{id:user.id},select:{patient:{select:{archivedAt:true}}}});
+      if (!account?.patient || account.patient.archivedAt) throw new UnauthorizedException('Account is unavailable.');
     }
     request.user = { sub: user.id, ...user };
     return true;

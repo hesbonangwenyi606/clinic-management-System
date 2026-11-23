@@ -14,7 +14,7 @@ export function LoadingState({ label = 'Loading clinic workspace…' }: { label?
   );
 }
 
-export function AnimatedDialog({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function AnimatedDialog({ title, children, onClose, closeLabel = 'Close record', dismissible = true }: { title: string; children: ReactNode; onClose: () => void; closeLabel?: string; dismissible?: boolean }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [closing, setClosing] = useState(false);
   const closeRef = useRef(onClose);
@@ -41,12 +41,12 @@ export function AnimatedDialog({ title, children, onClose }: { title: string; ch
 
   return (
     <dialog ref={dialogRef} aria-label={title} className={`panel patient-chart motion-dialog${closing ? ' is-closing' : ''}`}
-      onCancel={(event) => { event.preventDefault(); setClosing(true); }}
-      onClick={(event) => { if (event.target === event.currentTarget) {
+      onCancel={(event) => { event.preventDefault(); if (dismissible) setClosing(true); }}
+      onClick={(event) => { if (dismissible && event.target === event.currentTarget) {
         const rect = event.currentTarget.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) setClosing(true);
       } }}>
-      <button type="button" className="quiet-button dialog-close" onClick={() => setClosing(true)}>Close record <span aria-hidden="true">×</span></button>
+      <button type="button" className="quiet-button dialog-close" disabled={!dismissible} onClick={() => setClosing(true)}>{closeLabel} <span aria-hidden="true">×</span></button>
       {children}
     </dialog>
   );

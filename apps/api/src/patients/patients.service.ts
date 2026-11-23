@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class PatientsService {
@@ -11,7 +12,7 @@ export class PatientsService {
     const page = this.parsePositiveInteger(pageValue, 1, 'page');
     const pageSize = Math.min(this.parsePositiveInteger(pageSizeValue, 20, 'pageSize'), 100);
     const term = search?.trim();
-    const where = term
+    const where = { archivedAt: null, ...(term
       ? {
           OR: [
             { patientNumber: { contains: term, mode: 'insensitive' as const } },
@@ -20,7 +21,7 @@ export class PatientsService {
             { phone: { contains: term } },
           ],
         }
-      : {};
+      : {}) };
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.patient.findMany({
@@ -45,7 +46,7 @@ export class PatientsService {
     return { items, page, pageSize, total };
   }
 
-  async get(id: string) {
+  async get(id: string, userId?:string) {
     const patient = await this.prisma.patient.findUnique({
       where: { id },
       include: {
@@ -63,6 +64,7 @@ export class PatientsService {
       },
     });
     if (!patient) throw new NotFoundException('Patient was not found.');
+    if(userId)await this.prisma.auditLog.create({data:{userId,action:'PATIENT_VIEWED',entityType:'Patient',entityId:id}});
     return patient;
   }
 
@@ -77,7 +79,7 @@ export class PatientsService {
           lastName: data.lastName.trim(),
           email: data.email?.trim().toLowerCase(),
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-          patientNumber: `P-${randomUUID().slice(0, 8).toUpperCase()}`,
+          patientNumber: `P-${randomUUID().toUpperCase()}`,
         },
       });
       await transaction.auditLog.create({
@@ -90,6 +92,43 @@ export class PatientsService {
       });
       return patient;
     });
+  }
+
+  async update(id: string, data: Partial<CreatePatientDto> & {expectedUpdatedAt?:string}, userId: string) {
+    if ((data.firstName !== undefined && !data.firstName?.trim()) || (data.lastName !== undefined && !data.lastName?.trim())) throw new BadRequestException('Patient names cannot be blank.');
+    if (data.dateOfBirth && new Date(data.dateOfBirth) > new Date()) throw new BadRequestException('Date of birth cannot be in the future.');
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.patient.findUnique({where:{id}});
+      if (!existing) throw new NotFoundException('Patient was not found.');
+      if (existing.archivedAt) throw new BadRequestException('Archived patient records cannot be edited.');
+      if(data.expectedUpdatedAt && existing.updatedAt.getTime()!==new Date(data.expectedUpdatedAt).getTime())throw new ConflictException('Patient details changed. Reload the record before saving.');
+      const patch:Prisma.PatientUpdateInput={};
+      if(data.firstName!==undefined)patch.firstName=data.firstName.trim();
+      if(data.lastName!==undefined)patch.lastName=data.lastName.trim();
+      if(data.gender!==undefined)patch.gender=data.gender;
+      if(data.dateOfBirth!==undefined)patch.dateOfBirth=data.dateOfBirth?new Date(data.dateOfBirth):null;
+      for(const field of ['phone','email','address','emergencyContact','nextOfKin','allergies','medicalAlerts'] as const) {
+        if(data[field]!==undefined)patch[field]=data[field]?.trim()||null;
+      }
+      if(typeof patch.email==='string')patch.email=patch.email.toLowerCase();
+      const patient = await tx.patient.update({where:{id},data:patch});
+      await tx.auditLog.create({data:{userId,action:'PATIENT_UPDATED',entityType:'Patient',entityId:id}});
+      return patient;
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  }
+
+  async remove(id: string, userId: string) {
+    return this.prisma.$transaction(async tx => {
+      const patient = await tx.patient.findUnique({where:{id},include:{_count:{select:{visits:true,appointments:true}},portalAccount:{select:{id:true}}}});
+      if (!patient) throw new NotFoundException('Patient was not found.');
+      const preserve = patient._count.visits > 0 || patient._count.appointments > 0 || !!patient.portalAccount;
+      if (preserve) {
+        await tx.patient.update({where:{id},data:{archivedAt:new Date()}});
+        if (patient.portalAccount) await tx.user.update({where:{id:patient.portalAccount.id},data:{active:false,sessionVersion:{increment:1}}});
+      } else await tx.patient.delete({where:{id}});
+      await tx.auditLog.create({data:{userId,action:preserve?'PATIENT_ARCHIVED':'PATIENT_DELETED',entityType:'Patient',entityId:id}});
+      return {deleted:!preserve,message:preserve?'Patient archived. Existing history is preserved and portal access is disabled.':'Patient deleted.'};
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
   }
 
   private parsePositiveInteger(value: string | undefined, defaultValue: number, name: string): number {

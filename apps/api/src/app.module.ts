@@ -8,8 +8,11 @@ import { RolesGuard } from './auth/roles.guard';
 import { PatientsModule } from './patients/patients.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { VisitsModule } from './visits/visits.module';
+import { WorkflowsModule } from './workflows/workflows.module';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers:[HealthController],
   imports: [
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
@@ -17,6 +20,7 @@ import { VisitsModule } from './visits/visits.module';
     PatientsModule,
     VisitsModule,
     OperationsModule,
+    WorkflowsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -70,3 +70,12 @@ export class StaffRoleDto {
   @IsIn(['CLINIC_ADMIN','RECEPTIONIST','CASHIER','ATTENDANT','PHARMACIST','LAB_TECHNICIAN','CLINICIAN_1','CLINICIAN_2','CLINICIAN_3','RECOVERY_NURSE','CATERING_STAFF','ACCOUNTANT','PROCUREMENT_OFFICER'])
   role!: string;
 }
+
+export class UpdateEmployeeDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @MinLength(1) @MaxLength(80) firstName!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value) @IsString() @MinLength(1) @MaxLength(80) lastName!: string;
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value) @IsEmail() @MaxLength(254) email!: string;
+}
+export class ResetEmployeePasswordDto {
+  @IsString() @MinLength(14) @MaxLength(72) password!: string;
+}
