@@ -1,0 +1,8 @@
+CREATE TABLE "PasswordRecovery" (
+  "userId" UUID PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE,
+  "codeHash" TEXT NOT NULL,
+  "sessionVersion" INTEGER NOT NULL,
+  "expiresAt" TIMESTAMP(3) NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

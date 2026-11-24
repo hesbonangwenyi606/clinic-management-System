@@ -93,6 +93,8 @@ Compose waits for PostgreSQL, applies migrations, seeds the administrator, then 
 
 ## API
 
+Password recovery sends a six-digit code to the account's email address. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` in `.env` to enable it. Gmail requires two-step verification and a Google app password; use `smtp.gmail.com` on port `465`. Codes expire after ten minutes, allow at most five attempts, and are single-use. Resetting a password signs out existing sessions. Apply the database migrations after updating.
+
 All routes below are relative to `/api/v1`; authenticated requests use the session cookie.
 
 - Authentication: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password`

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { LoadingState } from '../components/motion';
 import { api } from '../lib/api';
+import PatientFlowReport from './patient-flow-report';
 
 type Filters = { from: string; to: string; status: string; department: string; method: string };
 type Report = {
@@ -84,6 +85,7 @@ export default function Reports({ active = true }: { active?: boolean }) {
   ] : [];
   return <section className="reports-view motion-page" aria-label="Clinic reports">
     <div className="panel-heading"><div><p className="eyebrow">MANAGEMENT OVERVIEW</p><h2>Reports & analytics</h2></div><button className="quiet-button" disabled={!report || loading || !!error} onClick={() => report && exportReport(report)}>Download CSV</button></div>
+    <PatientFlowReport active={active} />
     <form onSubmit={apply} className="panel report-filters">
       <div className="report-presets"><span>Quick period</span><button type="button" className="quiet-button" onClick={()=>preset('today')} disabled={loading}>Today</button><button type="button" className="quiet-button" onClick={()=>preset('month')} disabled={loading}>This month</button><button type="button" className="quiet-button" onClick={()=>preset('all')} disabled={loading}>All dates / reset</button></div>
       <div className="report-filter-grid">

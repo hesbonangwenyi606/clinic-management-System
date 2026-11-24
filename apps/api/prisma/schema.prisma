@@ -79,6 +79,17 @@ model User {
   admissionEvents AdmissionEvent[]
   amendments RecordAmendment[]
   reversals PaymentReversal[]
+  passwordRecovery PasswordRecovery?
+}
+
+model PasswordRecovery {
+  userId         String   @id @db.Uuid
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash       String
+  sessionVersion Int
+  expiresAt      DateTime
+  attempts       Int      @default(0)
+  createdAt      DateTime @default(now())
 }
 
 model Patient {

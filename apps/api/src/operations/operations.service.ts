@@ -291,6 +291,15 @@ export class OperationsService {
       }},
     }});
   }
+  async patientFlow(user: AuthenticatedUser, input: ReportFilters) {
+    this.allow(user,'reports');
+    if (!input.from || !input.to) throw new BadRequestException('Choose a start and end date.');
+    const {dateRange,status,filters} = parseReportFilters(input);
+    if (!dateRange?.gte || !dateRange.lt || dateRange.lt.getTime()-dateRange.gte.getTime()>366*86400000) throw new BadRequestException('Choose a period of at most 366 days.');
+    const visits = await this.db.visit.findMany({where:{arrivedAt:dateRange,status},orderBy:[{arrivedAt:'asc'},{id:'asc'}],take:5001,select:{id:true,visitNumber:true,arrivedAt:true,status:true,patient:{select:{id:true,patientNumber:true,firstName:true,lastName:true}},createdBy:{select:{firstName:true,lastName:true}},workflowEvents:{orderBy:{changedAt:'asc'},select:{toStatus:true,changedAt:true,changedBy:{select:{firstName:true,lastName:true}}}},careEntries:{orderBy:{createdAt:'asc'},select:{department:true,createdAt:true,author:{select:{firstName:true,lastName:true}}}}}});
+    if (visits.length>5000) throw new BadRequestException('More than 5,000 visits match. Choose a shorter period.');
+    return {filters,visits};
+  }
   async reports(user: AuthenticatedUser, input: ReportFilters = {}) {
     this.allow(user,'reports');
     const { dateRange, status, department, method, filters } = parseReportFilters(input);

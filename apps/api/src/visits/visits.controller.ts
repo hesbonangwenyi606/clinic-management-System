@@ -1,5 +1,5 @@
 import { rolesFor } from '@cms/access';
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthenticatedUser } from '../auth/auth.types';
@@ -31,6 +31,10 @@ export class VisitsController {
   @Get(':id/history')
   @Roles(...(rolesFor('visits.history') as UserRole[]))
   history(@Param('id', ParseUUIDPipe) id: string) { return this.visits.history(id); }
+
+  @Delete(':id')
+  @Roles(...(rolesFor('visits.delete') as UserRole[]))
+  remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) { return this.visits.remove(id,user.sub); }
 
   @Post(':id/status')
   @Roles(...(rolesFor('visits.status') as UserRole[]))

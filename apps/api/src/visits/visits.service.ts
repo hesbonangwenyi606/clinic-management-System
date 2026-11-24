@@ -59,6 +59,18 @@ export class VisitsService {
     return this.prisma.workflowEvent.findMany({ where: { visitId:id }, orderBy: { changedAt:'asc' }, include: { changedBy: { select: { firstName:true,lastName:true } } } });
   }
 
+  async remove(id: string, userId: string) {
+    return this.prisma.$transaction(async tx => {
+      const visit = await tx.visit.findUnique({where:{id},select:{status:true,admission:{select:{id:true}},_count:{select:{workflowEvents:true,careEntries:true,labOrders:true,invoices:true,prescriptions:true}}}});
+      if (!visit) throw new NotFoundException('Visit was not found.');
+      const counts = visit._count;
+      if (visit.admission || counts.careEntries || counts.labOrders || counts.invoices || counts.prescriptions) throw new BadRequestException('This visit has linked clinical, admission, or billing records and cannot be deleted.');
+      await tx.visit.delete({where:{id}});
+      await tx.auditLog.create({data:{userId,action:'VISIT_DELETED',entityType:'Visit',entityId:id}});
+      return {deleted:true};
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  }
+
   async create(data: CreateVisitDto, userId: string) {
     if (!data.reason.trim()) throw new BadRequestException('Visit reason cannot be blank.');
     return this.prisma.$transaction(async (transaction) => {

@@ -12,6 +12,7 @@ class OperationsController {
   @Get('portal') portal(@CurrentUser() u: AuthenticatedUser) { return this.service.portal(u); }
   @Post('expenses') expense(@Body() d: ExpenseDto, @CurrentUser() u: AuthenticatedUser) { return this.service.expense(d,u); }
   @Get('reports') reports(@CurrentUser() u: AuthenticatedUser, @Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string, @Query('department') department?: string, @Query('method') method?: string) { return this.service.reports(u,{from,to,status,department,method}); }
+  @Get('patient-flow') patientFlow(@CurrentUser() u: AuthenticatedUser, @Query('from') from?: string, @Query('to') to?: string, @Query('status') status?: string) { return this.service.patientFlow(u,{from,to,status}); }
   @Get(':area') list(@Param('area') area: string, @CurrentUser() u: AuthenticatedUser, @Query() query: ListQuery) { return this.service.list(area,u,query); }
   @Post('care') care(@Body() d: CareDto, @CurrentUser() u: AuthenticatedUser) { return this.service.care(d,u); }
   @Post('labs') lab(@Body() d: LabDto, @CurrentUser() u: AuthenticatedUser) { return this.service.lab(d,u); }
