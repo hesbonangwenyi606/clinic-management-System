@@ -92,6 +92,13 @@ test('logout revokes tokens and expired tokens do not prevent clearing the sessi
   await expired.signOut('expired');await expired.signOut();
 });
 
+test('password changes and recovery reject passwords shorter than 14 characters',async()=>{
+  const {AuthService}=require('../dist/auth/auth.service');
+  const auth=new AuthService({},{});
+  await assert.rejects(auth.changePassword('u','current','short-pass'),{status:400});
+  await assert.rejects(auth.resetRecovery('user@example.test','123456','short-pass'),{status:400});
+});
+
 test('routes without an explicit authorization policy deny access',()=>{
   const {RolesGuard}=require('../dist/auth/roles.guard');
   const guard=new RolesGuard({getAllAndOverride:()=>undefined});

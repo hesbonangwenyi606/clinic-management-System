@@ -85,14 +85,14 @@ test('administrators see every department and can manage staff roles',()=>{
  const {modulesFor,canPerform}=require('@cms/access');
  for(const role of ['SUPER_ADMIN','CLINIC_ADMIN']) {
   assert.equal(modulesFor(role).length,15);
-  for(const action of ['patients.create','visits.create','visits.status','stock.adjust','staff.update','invoices.create']) assert.equal(canPerform(role,action),true);
+  for(const action of ['patients.create','visits.create','visits.update','visits.delete','visits.status','stock.adjust','staff.update','invoices.create']) assert.equal(canPerform(role,action),true);
  }
 });
 test('receptionists can register, edit patients and open visits but cannot delete or enter departments',async()=>{
  const {modulesFor,canPerform}=require('@cms/access');const {Reflector}=require('@nestjs/core');const {RolesGuard}=require('../dist/auth/roles.guard');const {VisitsController}=require('../dist/visits/visits.controller');const {PatientsController}=require('../dist/patients/patients.controller');
  assert.deepEqual(modulesFor('RECEPTIONIST'),[]);
  for(const action of ['patients.read','patients.create','patients.update','visits.read','visits.create','visits.history']) assert.equal(canPerform('RECEPTIONIST',action),true);
- for(const action of ['patients.delete','visits.status','invoices.create','appointments.create','care.clinical','staff.update']) assert.equal(canPerform('RECEPTIONIST',action),false);
+ for(const action of ['patients.delete','visits.update','visits.delete','visits.status','invoices.create','appointments.create','care.clinical','staff.update']) assert.equal(canPerform('RECEPTIONIST',action),false);
  const {service:s}=service();for(const area of ['care','labs','stock','movements','prescriptions','invoices','appointments','expenses','staff','reports','audit']) await assert.rejects(s.list(area,user('RECEPTIONIST')),{status:403});
  const guard=new RolesGuard(new Reflector());
  function context(controller,method) {return {getHandler:()=>controller.prototype[method],getClass:()=>controller,switchToHttp:()=>({getRequest:()=>({user:user('RECEPTIONIST')})})};}

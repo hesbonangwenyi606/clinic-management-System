@@ -68,7 +68,7 @@ export class OperationsService {
       case 'prescriptions':
         if (query.status && !['PENDING','DISPENSED'].includes(query.status)) throw new BadRequestException('Invalid prescription status.');
         return this.db.prescription.findMany({where:{...visitWhere,dispensedAt:query.status==='PENDING'?null:query.status==='DISPENSED'?{not:null}:undefined},include:{visit,stockItem:true},orderBy,...paged});
-      case 'invoices': return this.db.invoice.findMany({where:visitWhere,include:{visit,payments:{include:{reversal:true}}},orderBy,...paged});
+      case 'invoices': return this.db.invoice.findMany({where:visitWhere,include:{visit,payments:{include:{reversal:true}},mpesaAttempt:{select:{status:true,message:true}}},orderBy,...paged});
       case 'appointments':
         if (query.status && !['BOOKED','ATTENDED','CANCELLED'].includes(query.status)) throw new BadRequestException('Invalid appointment status.');
         return this.db.appointment.findMany({where:{status:query.status,...(text?{patient:{OR:[{firstName:text},{lastName:text},{patientNumber:text}]}}:{})},include:{patient},orderBy:[{scheduledAt:'asc'},{id:'asc'}],...paged});
@@ -150,8 +150,9 @@ export class OperationsService {
   payment(id: string, data: PaymentDto, user: AuthenticatedUser) {
     this.allow(user, 'invoices', rolesFor('invoices.payment'));
     return this.transaction(user, 'PAYMENT_RECORDED', async tx => {
-      const invoice = await tx.invoice.findUnique({ where: { id }, include: { payments:{where:{reversal:null}} } });
+      const invoice = await tx.invoice.findUnique({ where: { id }, include: { payments:{where:{reversal:null}}, mpesaAttempt:true } });
       if (!invoice) throw new NotFoundException('Invoice was not found.');
+      if (invoice.mpesaAttempt) throw new BadRequestException('Consultation STK payments cannot be recorded manually. Reconcile the M-Pesa request first.');
       const paid = invoice.payments.reduce((sum,p) => sum+p.amountCents,0);
       if (paid + data.amountCents > invoice.amountCents) throw new BadRequestException('Payment exceeds outstanding balance.');
       return tx.payment.create({ data: { ...data, reference:data.reference.trim(), invoiceId:id, recordedBy:user.sub } });

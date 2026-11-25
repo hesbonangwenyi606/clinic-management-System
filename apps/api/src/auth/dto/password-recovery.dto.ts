@@ -6,5 +6,5 @@ export class RequestRecoveryDto {
 
 export class ResetRecoveryDto extends RequestRecoveryDto {
   @IsString() @Matches(/^\d{6}$/) code!: string;
-  @IsString() @MinLength(6) @MaxLength(72) password!: string;
+  @IsString() @MinLength(14) @MaxLength(72) password!: string;
 }

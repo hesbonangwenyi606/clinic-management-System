@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { VisitsModule } from './visits/visits.module';
 import { WorkflowsModule } from './workflows/workflows.module';
 import { HealthController } from './health.controller';
+import { MpesaModule } from './mpesa/mpesa.module';
 
 @Module({
   controllers:[HealthController],
@@ -21,6 +22,7 @@ import { HealthController } from './health.controller';
     VisitsModule,
     OperationsModule,
     WorkflowsModule,
+    MpesaModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

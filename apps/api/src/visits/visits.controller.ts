@@ -1,11 +1,12 @@
 import { rolesFor } from '@cms/access';
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { Roles } from '../auth/roles.decorator';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
+import { UpdateVisitDto } from './dto/update-visit.dto';
 import { ListQuery } from '../common/pagination';
 import { VisitsService } from './visits.service';
 
@@ -35,6 +36,10 @@ export class VisitsController {
   @Delete(':id')
   @Roles(...(rolesFor('visits.delete') as UserRole[]))
   remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) { return this.visits.remove(id,user.sub); }
+
+  @Patch(':id')
+  @Roles(...(rolesFor('visits.update') as UserRole[]))
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() body: UpdateVisitDto, @CurrentUser() user: AuthenticatedUser) { return this.visits.update(id,body,user.sub); }
 
   @Post(':id/status')
   @Roles(...(rolesFor('visits.status') as UserRole[]))

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
+import { UpdateVisitDto } from './dto/update-visit.dto';
 
 const ALLOWED_TRANSITIONS: Record<VisitStatus, VisitStatus[]> = {
   REGISTERED: ['WAITING', 'IN_PROGRESS', 'ADMITTED', 'CANCELLED'],
@@ -57,6 +58,17 @@ export class VisitsService {
     const visit = await this.prisma.visit.findUnique({ where: { id }, select: { id:true } });
     if (!visit) throw new NotFoundException('Visit was not found.');
     return this.prisma.workflowEvent.findMany({ where: { visitId:id }, orderBy: { changedAt:'asc' }, include: { changedBy: { select: { firstName:true,lastName:true } } } });
+  }
+
+  async update(id: string, data: UpdateVisitDto, userId: string) {
+    if (data.reason.trim().length < 2) throw new BadRequestException('Visit reason must contain at least two characters.');
+    return this.prisma.$transaction(async tx => {
+      const existing = await tx.visit.findUnique({where:{id},select:{id:true}});
+      if (!existing) throw new NotFoundException('Visit was not found.');
+      const visit = await tx.visit.update({where:{id},data:{type:data.type,reason:data.reason.trim()}});
+      await tx.auditLog.create({data:{userId,action:'VISIT_UPDATED',entityType:'Visit',entityId:id}});
+      return visit;
+    });
   }
 
   async remove(id: string, userId: string) {

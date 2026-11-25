@@ -232,8 +232,25 @@ model Invoice {
   createdBy String @db.Uuid
   createdAt DateTime @default(now())
   payments Payment[]
+  mpesaAttempt MpesaAttempt?
   @@index([visitId, createdAt])
   @@index([createdBy])
+}
+
+model MpesaAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  invoiceId String? @unique @db.Uuid
+  invoice Invoice? @relation(fields:[invoiceId], references:[id], onDelete:Restrict)
+  pendingPatient Json?
+  createdById String @db.Uuid
+  phone String
+  amount Int
+  tokenHash String @unique
+  checkoutId String? @unique
+  status String @default("INITIATING")
+  message String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Payment {

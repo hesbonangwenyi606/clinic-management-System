@@ -4,6 +4,7 @@ import { compare, hash } from 'bcryptjs';
 import { createHmac, randomInt } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 const nodemailer = require('nodemailer') as typeof import('nodemailer');
+const DUMMY_PASSWORD_HASH = '$2b$12$Fdi9tlurYZVfG1QKHgt/yeyz3FRkQA9rGg78pVTOIpsQt4r1Q5uqG';
 
 @Injectable()
 export class AuthService {
@@ -34,7 +35,7 @@ export class AuthService {
   }
 
   async resetRecovery(email:string, code:string, password:string) {
-    if (password.length < 6 || Buffer.byteLength(password)>72) throw new BadRequestException('Use at least 6 characters and at most 72 UTF-8 bytes.');
+    if (password.length < 14 || Buffer.byteLength(password)>72) throw new BadRequestException('Use at least 14 characters and at most 72 UTF-8 bytes.');
     const user = await this.prisma.user.findUnique({where:{email:email.trim().toLowerCase()},select:{id:true,active:true,sessionVersion:true,patient:{select:{archivedAt:true}}}});
     if (!user?.active || user.patient?.archivedAt) throw new BadRequestException('The code is invalid or expired.');
     const passwordHash = await hash(password,12);
@@ -57,7 +58,8 @@ export class AuthService {
       where: { email: email.trim().toLowerCase() },
     });
 
-    if (!user || !user.active || !(await compare(password, user.passwordHash))) {
+    const matches = await compare(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
+    if (!user || !user.active || !matches) {
       throw new UnauthorizedException('Email or password is incorrect.');
     }
     if (user.patientId) {
@@ -99,7 +101,7 @@ export class AuthService {
   }
 
   async changePassword(id:string, currentPassword:string, password:string) {
-    if (password.length < 6 || Buffer.byteLength(password)>72) throw new BadRequestException('Use at least 6 characters and at most 72 UTF-8 bytes.');
+    if (password.length < 14 || Buffer.byteLength(password)>72) throw new BadRequestException('Use at least 14 characters and at most 72 UTF-8 bytes.');
     const user = await this.prisma.user.findUnique({where:{id}});
     if (!user?.active || !(await compare(currentPassword,user.passwordHash))) throw new UnauthorizedException('Current password is incorrect.');
     if (await compare(password,user.passwordHash)) throw new BadRequestException('Choose a different password.');

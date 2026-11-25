@@ -24,6 +24,7 @@ const actions = {
   'patients.delete': [],
   'visits.read': [...patientReaders, 'CATERING_STAFF', 'CASHIER', 'ACCOUNTANT'],
   'visits.create': ['RECEPTIONIST'],
+  'visits.update': [],
   'visits.delete': [],
   'visits.history': ['RECEPTIONIST', ...workflowWriters],
   'visits.status': workflowWriters,

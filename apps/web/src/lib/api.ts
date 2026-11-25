@@ -1,5 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+function apiUrl(): string {
+  if (typeof window === 'undefined') return API_URL;
+  const url = new URL(API_URL, window.location.origin);
+  const loopback = ['localhost', '127.0.0.1'];
+  if (loopback.includes(url.hostname) && loopback.includes(window.location.hostname)) {
+    url.hostname = window.location.hostname;
+  }
+  return url.toString().replace(/\/$/, '');
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -7,7 +17,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}/api/v1${path}`, {
+  const response = await fetch(`${apiUrl()}/api/v1${path}`, {
     ...init,
     credentials: 'include',
     cache: 'no-store',
