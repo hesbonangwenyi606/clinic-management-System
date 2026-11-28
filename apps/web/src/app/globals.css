@@ -56,6 +56,14 @@ button:disabled{opacity:.6;cursor:wait}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .form-grid .full,.wide-button{grid-column:1/-1}
 .form-grid input,.form-grid select{height:40px}
+.patient-allergies{min-width:0;margin:0;padding:0;border:0}
+.patient-allergies legend{padding:0;font-weight:700}
+.patient-allergy-options{display:flex;gap:18px;align-items:center;margin-top:8px}
+.patient-allergy-options label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.form-grid .patient-allergy-options input[type="radio"]{appearance:none;width:18px;height:18px;margin:0;padding:0;border:1px solid #8298ac;border-radius:4px;background:#fff;display:grid;place-items:center;cursor:pointer}
+.patient-allergy-options input[type="radio"]:checked::before{content:"✓";color:#007d83;font-size:14px;font-weight:700;line-height:1}
+.patient-allergies .patient-allergy-details{display:none;margin-top:8px}
+.patient-allergies:has(input[value="Yes"]:checked) .patient-allergy-details{display:block}
 .wide-button{margin-top:2px}
 .patient-panel{padding-bottom:0}
 .list-heading{margin-bottom:14px}
@@ -681,22 +689,19 @@ html[data-theme='dark'] .dashboard-help{background:#1d303df2;border-color:#405b6
 @media(max-width:600px){.dashboard .welcome-row{padding:22px}.dashboard .welcome-row::after{right:10px;opacity:.5}.dashboard-section-heading{align-items:start;flex-direction:column}.dashboard-help{align-items:flex-start;flex-wrap:wrap}.dashboard-help button{margin-left:58px}.dashboard-stats .stat-card{min-height:100px;padding:16px}.dashboard-stats .stat-card strong{font-size:1.8rem}}
 /* Sign-in workspace */
 .login-shell,html[data-theme='dark'] .login-shell{padding:32px;background:#0c2639}
-.login-layout{display:grid;grid-template-columns:1.05fr .95fr;width:min(100%,1040px);min-height:620px;overflow:hidden;border:1px solid #ffffff25;border-radius:26px;background:var(--surface);box-shadow:0 28px 80px #00121f66}
-.login-intro{position:relative;display:flex;flex-direction:column;justify-content:space-between;min-height:100%;padding:42px;color:#fff;background:linear-gradient(160deg,#092b43a8,#082538e8),url('/images/login-background-new.jpg') center/cover no-repeat}
-.login-intro-brand{display:flex;align-items:center;gap:12px;font-size:.67rem;letter-spacing:.12em;line-height:1.4}
-.login-intro-brand span{display:grid;place-items:center;width:38px;height:38px;border:1px solid #ffffff80;border-radius:12px;font-size:1.7rem;font-weight:400}
-.login-intro-copy{max-width:390px;padding:60px 0}
+.login-layout{display:grid;grid-template-columns:1.05fr .95fr;width:min(100%,1040px);min-height:510px;overflow:hidden;border:1px solid #ffffff25;border-radius:26px;background:var(--surface);box-shadow:0 28px 80px #00121f66}
+.login-intro{position:relative;display:flex;flex-direction:column;justify-content:space-between;min-height:100%;padding:30px;color:#fff;background:linear-gradient(160deg,#092b43a8,#082538e8),url('/images/login-background-new.jpg') center/cover no-repeat}
+.login-intro-brand{display:flex;align-items:center;gap:9px;font-size:.64rem;letter-spacing:.1em;line-height:1.3}
+.login-intro-brand span{display:grid;place-items:center;flex:none;width:60px;height:29px;border:1px solid #ffffff80;border-radius:8px}
+.login-intro-brand span img{width:56px;height:auto;filter:url(#applewood-logo-on-dark)}
+.login-intro-copy{max-width:390px;padding:26px 0}
 .login-intro-kicker{color:#8de4d6;font-size:.68rem;font-weight:700;letter-spacing:.2em}
 .login-intro-copy h2{margin:18px 0;font-size:clamp(2.5rem,4vw,3.7rem);line-height:1.06;letter-spacing:-.05em}
 .login-typing{display:block}.login-typing-first,.login-typing-second{display:block;width:max-content;max-width:100%;overflow:hidden;white-space:nowrap}
-.login-typing-first{animation:login-type-first 6s steps(11,end) infinite}.login-typing-second{animation:login-type-second 6s steps(16,end) infinite}
-@keyframes login-type-first{0%{clip-path:inset(0 100% 0 0)}18%,90%{clip-path:inset(0)}100%{clip-path:inset(0 100% 0 0)}}
-@keyframes login-type-second{0%,18%{clip-path:inset(0 100% 0 0)}43%,80%{clip-path:inset(0)}90%,100%{clip-path:inset(0 100% 0 0)}}
-@media(prefers-reduced-motion:reduce){.login-typing-first,.login-typing-second{animation:none}}
 .login-intro-copy>p:not(.login-intro-kicker){max-width:300px;color:#d1e3e9;font-size:1rem;line-height:1.65}
 .login-intro-line{width:54px;height:3px;margin-top:30px;border-radius:4px;background:#69d7c7}
-.login-intro-brand,.login-intro-copy,.login-intro-footer{animation:login-reveal 650ms cubic-bezier(.2,.7,.2,1) both}
-.login-intro-copy{animation-delay:120ms}.login-intro-footer{animation-delay:240ms}
+.login-intro-brand,.login-intro-footer{animation:login-reveal 650ms cubic-bezier(.2,.7,.2,1) both}
+.login-intro-footer{animation-delay:240ms}
 .login-intro-line{transform-origin:left;animation:login-line 800ms 350ms cubic-bezier(.2,.7,.2,1) both}
 .login-card input{transition:border-color .2s,box-shadow .2s,background-color .2s}
 .login-card .form-stack button:not(.forgot-password){transition:transform .2s,box-shadow .2s,filter .2s}
@@ -704,15 +709,17 @@ html[data-theme='dark'] .dashboard-help{background:#1d303df2;border-color:#405b6
 @keyframes login-reveal{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 @keyframes login-line{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .login-intro-footer{margin:0;color:#c1d6df;font-size:.62rem;font-weight:700;letter-spacing:.14em}.login-intro-footer span{padding:0 7px;color:#69d7c7}
-.login-card{align-self:center;width:100%;padding:52px clamp(32px,5vw,64px);border:0;border-radius:0;background:var(--surface);box-shadow:none}
-.login-card>.brand-icon{width:44px;height:44px;border-radius:13px;font-size:1.7rem}
+.login-card{align-self:center;width:100%;padding:30px clamp(28px,4vw,52px);border:0;border-radius:0;background:var(--surface);box-shadow:none}
+.login-card>.login-logo{display:block;width:min(100%,152px);height:auto}
+.login-card>.login-logo + .eyebrow{margin-top:14px}
+html[data-theme='dark'] .login-card>.login-logo{filter:url(#applewood-logo-on-dark)}
 .login-card .eyebrow{margin-top:28px;color:#148a86}
 .login-card h1{font-size:clamp(2rem,3vw,2.5rem);line-height:1.1}
-.login-card .form-stack{gap:17px;margin-top:30px}
+.login-card .form-stack{gap:12px;margin-top:20px}
 .login-card label{font-size:.8rem;gap:8px}
-.login-card input{height:50px;border-radius:11px}
-.login-card .form-stack button:not(.forgot-password){min-height:50px;border-radius:11px}
-.login-card .login-footnote{margin-top:25px;line-height:1.5}
+.login-card input{height:46px;border-radius:11px}
+.login-card .form-stack button:not(.forgot-password){min-height:46px;border-radius:11px}
+.login-card .login-footnote{margin-top:16px;line-height:1.5}
 html[data-theme='dark'] .login-card{box-shadow:none}
 html[data-theme='dark'] .login-card .eyebrow{color:#80d6cb}
 @media(max-width:700px){.login-shell,html[data-theme='dark'] .login-shell{padding:20px}.login-layout{grid-template-columns:1fr;min-height:0;max-width:480px}.login-intro{min-height:210px;padding:26px}.login-intro-copy{padding:30px 0 4px}.login-intro-copy h2{font-size:2rem;margin:10px 0}.login-intro-copy>p:not(.login-intro-kicker){font-size:.85rem;margin-bottom:0}.login-intro-line,.login-intro-footer{display:none}.login-card{padding:32px 26px}.login-card .eyebrow{margin-top:20px}}
@@ -737,13 +744,152 @@ input:focus,select:focus,textarea:focus{border-color:#56a9bd;box-shadow:0 0 0 3p
 }
 
 .login-card .form-stack button.password-toggle,.login-card .form-stack button.password-toggle:hover:not(:disabled){min-height:0;height:40px;transform:translateY(-50%);box-shadow:none;filter:none}
+.login-shell{min-height:100svh;place-items:safe center;background:radial-gradient(ellipse at top,#f0f3ff,#d6defa)}
+html[data-theme='dark'] .login-shell{background:radial-gradient(ellipse at 72% 14%,#23345e,#0d1b30 62%,#0a1426)}
+.login-layout{
+  grid-template-columns:1.15fr 1fr;width:min(100%,800px);min-height:min(410px,calc(100svh - 40px));margin-inline:auto;
+  border:0;border-radius:28px;
+  background:linear-gradient(135deg,#d9e6ff,#6b16df 100%);box-shadow:0 14px 38px #243bb441;
+  animation:login-layout-arrive 580ms var(--motion-ease) both;
+}
+@keyframes login-layout-arrive {
+  from {opacity:0;transform:translateY(-36px)}
+  to {opacity:1;transform:translateY(0)}
+}
+html[data-theme='dark'] .login-layout{
+  outline:1px solid #93aaff35;box-shadow:0 18px 48px #050b1a85;
+}
+.login-intro{
+  isolation:isolate;overflow:hidden;padding:clamp(22px,3.2vw,40px);
+  background:radial-gradient(ellipse at 5% 67%,#102179f5 7%,#143181c4 34%,#3055a224 65%,transparent 77%),
+    linear-gradient(0deg,#23197d7d,transparent 60%),
+    url('/images/login-clinician.webp') right top/cover no-repeat;
+}
+.login-intro::before,.login-intro::after{
+  content:"";position:absolute;z-index:-1;left:-8%;width:116%;height:88px;bottom:-44px;
+  border-radius:48% 58% 0 0;transform:rotate(-4deg);pointer-events:none;
+}
+.login-intro::before{background:linear-gradient(90deg,#873cff,#8cff41 75%,#66da29);bottom:-34px}
+.login-intro::after{background:linear-gradient(90deg,#160c65,#240f88 70%,#6618dd)}
+.login-intro-brand{display:grid;justify-items:start;gap:12px;width:min(100%,345px);font-size:.73rem}
+.login-intro-brand span{width:min(76%,270px);height:auto;border:0;border-radius:0}
+.login-intro-brand span img{width:100%;height:auto;filter:url(#applewood-logo-cutout)}
+.login-intro-brand strong{display:flex;align-items:center;gap:10px;letter-spacing:.14em;text-align:left}
+.login-intro-brand strong::after{content:"";width:clamp(12px,3vw,42px);height:1px;background:#ffffffb0}
+.login-intro-copy{max-width:none;container-type:inline-size}
+.login-intro-copy h2{font-size:clamp(1.65rem,10.8cqw,3.65rem);margin:9px 0 12px}
+.login-intro-copy em{font-style:normal;color:#8bff44;text-decoration:underline;text-decoration-thickness:.06em;text-underline-offset:.12em}
+.login-intro-copy .login-typing-second{padding-bottom:.16em}
+.login-intro-kicker{color:#fff;margin:10px 0 0;font-size:clamp(.95rem,4cqw,1.45rem);font-style:italic;font-weight:500;letter-spacing:0}
+.login-intro-copy>p:not(.login-intro-kicker){color:#f1f7ff;line-height:1.4;margin:0}
+.login-feature-list{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(6px,1.25vw,16px);
+  width:min(100%,405px);list-style:none;margin:18px 0 0;padding:0;
+}
+.login-feature-list li{
+  display:grid;justify-items:center;align-content:center;gap:5px;min-height:57px;
+  padding:4px 2px;border:1px solid #a5cbff50;border-radius:12px;
+  background:#00459555;color:#fff;font-size:clamp(.55rem,2.6cqw,.72rem);
+}
+.login-feature-list svg{width:20px;height:20px}
+.login-intro-footer{display:flex;align-items:center;gap:10px;color:#fff;font-size:.9rem;letter-spacing:0}
+.login-intro-footer svg{width:28px;height:28px}
+.login-card{display:flex;flex-direction:column;justify-content:center;align-self:stretch;text-align:center;border-radius:0;background:#fff}
+.login-card>.login-logo{width:min(100%,254px);margin-inline:auto}
+.login-card .eyebrow,.login-card .login-footnote{display:flex;align-items:center;justify-content:center;gap:10px}
+.login-card :is(.eyebrow,.login-footnote)::before,.login-card :is(.eyebrow,.login-footnote)::after{
+  content:"";flex:1;height:1px;background:#93b6ee;
+}
+.login-card .eyebrow{color:#4816bd}
+.login-card h1{color:#0a1846}
+.login-card .form-stack{text-align:left}
+.login-card .login-field-label{display:flex;align-items:center;gap:10px;color:#0a1846;font-size:.94rem}
+.login-card .login-field-label svg{width:19px;height:19px;color:#520ed8}
+.login-card .login-input{position:relative;display:block}
+.login-card .form-stack input:not([type="checkbox"]){width:100%;border-color:#b6a9fb;background:#eef0ff}
+.login-card .login-options{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.login-card .login-options label{display:flex;align-items:center;gap:7px;font-weight:500}
+.login-card .login-options input{width:17px;height:17px;min-height:0;margin:0;accent-color:#5313d7}
+.login-card .form-stack .login-submit{
+  display:flex;align-items:center;justify-content:center;gap:10px;border:0;
+  border-radius:999px;background:linear-gradient(165deg,#8c40fc,#2b0bb3 51%,#580bdb);
+  box-shadow:0 5px 14px #5625d93b;
+}
+.login-card .form-stack .login-submit:hover:not(:disabled){filter:brightness(1.12)}
+.login-card .form-stack .forgot-password {
+  --recovery-link:#4816bd;
+  --recovery-hover:#f0eaff;
+  min-height:30px;padding:4px 7px;border-radius:6px;
+  background:transparent;box-shadow:none;color:var(--recovery-link);text-decoration:none;
+  transition:background-color 160ms ease;
+}
+.login-card .form-stack .forgot-password:hover {
+  background:var(--recovery-hover);text-decoration:underline;text-underline-offset:3px;
+}
+.login-card .form-stack .forgot-password:focus-visible {outline:2px solid var(--recovery-link);outline-offset:2px}
+.login-card .login-footnote{border-radius:999px;padding:8px;background:#eef0ff;color:#172153}
+.login-card .login-footnote::before,.login-card .login-footnote::after{content:none}
+.login-card .login-footnote svg{flex:none;width:18px;height:18px;color:#388d22}
+html[data-theme='dark'] .login-card{background:linear-gradient(155deg,#212e48,#17253a 60%,#142137)}
+html[data-theme='dark'] .login-card h1{color:#f1f7fb}
+html[data-theme='dark'] .login-card>.subtle{color:#b9c7df}
+html[data-theme='dark'] .login-card .form-stack input:not([type="checkbox"]){
+  background:#26364f;border-color:#576d8f;color:#f1f6ff;
+}
+html[data-theme='dark'] .login-card .form-stack input:not([type="checkbox"]):focus{
+  border-color:#b9a2ff;box-shadow:0 0 0 3px #9d7eff35;
+}
+html[data-theme='dark'] .login-card .login-field-label{color:#f1f7fb}
+html[data-theme='dark'] .login-card .login-field-label svg{color:#b9a9ff}
+html[data-theme='dark'] .login-card .form-stack .password-toggle{color:#afc2df}
+html[data-theme='dark'] .login-card .form-stack .forgot-password {
+  --recovery-link:#cbbdff;
+  --recovery-hover:#b9a9ff20;
+  background:transparent;color:var(--recovery-link);
+}
+html[data-theme='dark'] .login-card .form-stack .forgot-password:hover {background:var(--recovery-hover)}
+html[data-theme='dark'] .login-card .login-footnote{background:#97b3ff0d;color:#d4dff6;border:1px solid #97b3ff25}
+html[data-theme='dark'] .login-card .login-footnote svg{color:#9ef082}
+@media(min-width:701px){
+  .login-layout{width:min(100%,800px,calc(100vw - 48px))}
+  .login-intro,.login-card{padding:14px clamp(18px,2.3vw,26px)}
+  .login-intro-brand{width:min(100%,245px);gap:8px}
+  .login-intro-brand span{width:min(75%,154px)}
+  .login-intro-brand strong{font-size:.64rem;gap:6px;letter-spacing:.1em}
+  .login-intro-copy{padding-block:6px}
+  .login-feature-list{margin-top:9px}
+  .login-feature-list li{min-height:41px}
+  .login-feature-list svg{width:19px;height:19px}
+  .login-card>.login-logo{width:min(100%,152px)}
+  .login-card>.login-logo + .eyebrow{margin-top:5px}
+  .login-card h1{font-size:clamp(1.85rem,2.8vw,2.25rem)}
+  .login-card>.subtle{margin:4px 0 0;font-size:.85rem}
+  .login-card .form-stack{gap:6px;margin-top:10px}
+  .login-card label{gap:4px}
+  .login-card .form-stack input:not([type="checkbox"]),
+  .login-card .form-stack .login-submit{height:38px;min-height:38px}
+  .login-card .form-stack .login-submit{font-size:1rem}
+  .login-card .login-footnote{margin-top:7px;padding:6px}
+}
+@media(min-width:701px) and (max-height:560px){
+  .login-shell,html[data-theme='dark'] .login-shell{padding-block:12px}
+}
+@media(max-width:700px){
+  .login-layout{grid-template-columns:1fr;min-height:0;max-width:480px}
+  .login-intro-copy h2{font-size:clamp(1.6rem,9cqw,2.4rem)}
+  .login-feature-list{margin-bottom:8px}
+  .login-card>.login-logo{width:min(100%,176px)}
+}
+@media(prefers-reduced-motion:reduce){
+  .login-layout,.login-intro-brand,.login-intro-footer,.login-intro-line{animation:none}
+}
 .consultation-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.5)}.consultation-overlay .consultation-payment{position:relative;width:min(100%,720px);max-height:calc(100dvh - 32px);overflow-y:auto;margin:0;box-shadow:0 20px 60px rgba(0,0,0,.2)}.consultation-payment .consultation-close{position:absolute;top:10px;right:12px;padding:2px 8px;border:0;background:transparent;color:var(--muted);font-size:1.5rem;line-height:1}.collect-heading{padding-right:30px}
 .visit-edit-form{display:grid;gap:12px}.visit-edit-form label{display:grid;gap:6px}.visit-edit-form button{justify-self:start}
 .reference-dashboard{--ref-blue:#0758d8;--ref-ink:#091b45;position:relative;padding:0 32px 40px 308px;background:#fbfcfe;color:var(--ref-ink);min-height:100vh}
 .reference-dashboard:before,.reference-dashboard:after{display:none}
 .reference-dashboard .workspace-navigation{display:none}
-.reference-dashboard .topbar{height:74px;border-bottom:1px solid #dce4ef}
-.reference-header-title{font-size:1.5rem;letter-spacing:-.03em;color:var(--ref-ink)}
+.reference-dashboard .topbar{height:60px;border-bottom:1px solid #dce4ef}
+.reference-dashboard .topbar .user-area{margin-left:auto}
 .reference-sidebar{position:absolute;top:0;left:0;bottom:0;width:275px;border-right:1px solid #dce4ef;background:#fff;padding:28px 10px}
 .reference-brand{display:flex;align-items:center;gap:14px;padding:0 20px 42px;font-size:1.35rem;line-height:1.05;letter-spacing:-.03em}
 .reference-brand span{font-size:2.6rem;color:#0c999c}
@@ -751,38 +897,41 @@ input:focus,select:focus,textarea:focus{border-color:#56a9bd;box-shadow:0 0 0 3p
 .reference-sidebar nav button{display:flex;align-items:center;gap:16px;text-align:left;border:0;border-radius:8px;background:transparent;color:var(--ref-ink);font-size:1rem;padding:14px 20px;font-weight:600}
 .reference-sidebar nav button span{width:23px;font-size:1.35rem;line-height:1}
 .reference-sidebar nav button.active{background:#e2f0ff;color:#064db9;box-shadow:inset 4px 0 #0758d8}
-.reference-content{max-width:1500px;margin:0 auto;padding-top:32px}
+.reference-content{max-width:1500px;margin:0 auto;padding-top:20px}
 .reference-title h1{font-size:2.5rem;letter-spacing:-.045em;margin:0;line-height:1.1}
-.reference-title p{margin:8px 0 32px;color:#586987;font-size:1.1rem}
-.reference-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px}
-.reference-metrics article{min-height:110px;display:flex;align-items:center;gap:18px;padding:18px;border:1px solid #b8dcff;border-radius:14px;background:#eef7ff}
+.reference-title p{margin:6px 0 18px;color:#586987;font-size:1.1rem}
+.reference-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.reference-metrics article{min-height:82px;display:flex;align-items:center;gap:11px;padding:12px;border:1px solid #b8dcff;border-radius:12px;background:#eef7ff}
 .reference-metrics article:nth-child(even){border-color:#b9e7e2;background:#edf9f7}
-.reference-metric-icon,.reference-overview-stat>span{display:grid;place-items:center;flex:none;width:60px;height:60px;border-radius:16px;background:#dfefff;color:#0758d8;font-size:1.9rem}
+.reference-metric-icon,.reference-overview-stat>span{display:grid;place-items:center;flex:none;width:42px;height:42px;border-radius:11px;background:#dfefff;color:#0758d8;font-size:1.45rem}
 .reference-metrics article:nth-child(even) .reference-metric-icon{background:#dcf4f0;color:#007c76}
 .reference-metrics b{display:block;font-size:.95rem}.reference-metrics strong{display:block;font-size:2.35rem;line-height:1.1;color:#0758d8}.reference-metrics article:nth-child(even) strong{color:#007c76}
-.reference-columns{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;margin-top:36px}
-.reference-toolbar{display:flex;gap:12px;margin-bottom:28px;align-items:stretch}
-.reference-toolbar>button,.reference-open{border-radius:10px;padding:13px 18px;white-space:nowrap;font-weight:700}
+.reference-columns{display:grid;grid-template-columns:minmax(0,1fr) 288px;gap:16px;margin-top:20px}
+.reference-toolbar{display:flex;gap:9px;margin-bottom:16px;align-items:stretch}
+.reference-toolbar>button,.reference-open{border-radius:8px;padding:9px 12px;white-space:nowrap;font-size:.9rem;font-weight:700}
 .reference-toolbar .reference-primary,.reference-open{background:#0758d8;color:white;border:1px solid #0758d8}
 .reference-toolbar .reference-secondary{background:#fff;color:#0758d8;border:1px solid #0758d8}
 .reference-toolbar form{display:flex;align-items:center;gap:8px;min-width:180px;flex:1;border:1px solid #c9d5e5;background:white;border-radius:10px;padding:0 12px;color:#526480}
 .reference-toolbar form input{min-width:0;flex:1;border:0;background:transparent;outline:0}.reference-toolbar form button{border:0;background:transparent;color:#0758d8}
-.reference-card{background:#fff;border:1px solid #d6e0ed;border-radius:14px;padding:20px}
-.reference-card h2{font-size:1.35rem;letter-spacing:-.03em;margin:0}.reference-card-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.reference-card-heading button{border:0;background:transparent;color:#0758d8;font-weight:700}
+.reference-card{background:#fff;border:1px solid #d6e0ed;border-radius:12px;padding:14px}
+.reference-card h2{font-size:1.35rem;letter-spacing:-.03em;margin:0}.reference-card-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.reference-card-heading button{border:0;background:transparent;color:#0758d8;font-weight:700}
 .reference-queue table{width:100%;border-collapse:collapse}.reference-queue th{background:#eaf3fc;color:#142746;text-align:left;font-size:.8rem}.reference-queue th,.reference-queue td{padding:12px 10px;border-bottom:1px solid #e4ebf3}.reference-queue td{font-size:.85rem}.reference-queue td strong,.reference-queue td small{display:block}.reference-queue td small{color:#71839a;margin-top:4px}.reference-queue td button{margin:2px}
 .reference-overview h2{margin-bottom:24px}.reference-overview-stat{display:flex;gap:16px;align-items:center;padding-bottom:24px;border-bottom:1px solid #e1e9f1}.reference-overview-stat b{font-size:.85rem}.reference-overview-stat strong{display:block;color:#0758d8;font-size:2.3rem}.reference-overview-links h3{font-size:1.05rem;margin:22px 0 10px}.reference-overview-links button{width:100%;display:flex;align-items:center;gap:12px;text-align:left;padding:10px 0;border:0;border-bottom:1px solid #e7edf4;background:transparent;color:#142746}.reference-overview-links button span{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#e9f4ff;color:#0758d8}.reference-overview-links button i{margin-left:auto;font-style:normal;color:#0758d8}
 @media(max-width:1100px){.reference-dashboard{padding-left:235px}.reference-sidebar{width:210px}.reference-columns{grid-template-columns:1fr}.reference-overview{max-width:none}.reference-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.reference-dashboard{padding:0 16px 30px}.reference-sidebar{position:static;width:auto;border:0;padding:12px 0}.reference-brand{padding:0 0 12px}.reference-sidebar nav{display:flex;overflow-x:auto}.reference-sidebar nav button{white-space:nowrap;padding:10px}.reference-dashboard .topbar{height:60px}.reference-content{padding-top:22px}.reference-title h1{font-size:2rem}.reference-metrics{gap:10px}.reference-metrics article{padding:12px;gap:10px}.reference-metric-icon{width:44px;height:44px;font-size:1.4rem}.reference-metrics strong{font-size:1.7rem}.reference-toolbar{flex-wrap:wrap}.reference-toolbar form{min-height:48px;flex-basis:100%}.reference-columns{margin-top:22px}.reference-card{padding:15px}}
-.reference-header-title{font-size:1.3rem}
 .reference-brand{font-size:1.15rem}
 .reference-sidebar nav button{font-size:.9rem}
-.reference-title h1{font-size:2rem}
-.reference-title p{font-size:1rem}
+.reference-title h1{font-size:1.7rem}
+.reference-title p{font-size:.92rem}
 .reference-metrics b{font-size:.85rem}
-.reference-metrics strong{font-size:2rem}
+.reference-metrics strong{font-size:1.65rem}
 .reference-card h2{font-size:1.2rem}
 .reference-queue th,.reference-queue td{font-size:.8rem}
-.reference-overview-stat strong{font-size:2rem}
+.reference-overview h2{margin-bottom:14px}
+.reference-overview-stat{gap:10px;padding-bottom:14px}
+.reference-overview-stat strong{font-size:1.65rem}
+.reference-overview-links h3{margin-top:14px}
+.reference-overview-links button{padding:7px 0}
 @media(max-width:700px){.reference-title h1{font-size:1.75rem}.reference-metrics strong{font-size:1.55rem}}
 .workspace.desk-reference{position:relative;width:100%;min-height:100vh;margin:0;padding:0 28px 36px 288px;background:#f7f7f6;color:#0b2343}
 .desk-reference .workspace-navigation{display:none}
@@ -835,9 +984,44 @@ input:focus,select:focus,textarea:focus{border-color:#56a9bd;box-shadow:0 0 0 3p
 .desk-reference .consultation-fee small{font-size:.8rem;line-height:1.5;color:#50627c}
 .desk-reference .consultation-fee .wide-button{width:100%;min-height:46px;border:1px solid #12873d;border-radius:9px;background:#12873d;color:#fff;font-size:.95rem;font-weight:700}
 .desk-reference .consultation-fee .wide-button:hover:not(:disabled){background:#0f7334;border-color:#0f7334}
+.desk-reference .form-grid .continue-payment{background:#12873d;border-color:#12873d}
+.desk-reference .form-grid .continue-payment:hover:not(:disabled){background:#0f7334;border-color:#0f7334}
 html[data-theme='dark'] .desk-reference .consultation-fee{background:#193b3b;border-color:#376663}
 html[data-theme='dark'] .desk-reference .consultation-fee-heading strong,html[data-theme='dark'] .desk-reference .consultation-fee label{color:#e2f4ef}
 html[data-theme='dark'] .desk-reference .consultation-fee-heading p,html[data-theme='dark'] .desk-reference .consultation-fee small{color:#bed6d3}
+html[data-theme='dark'] .desk-reference .actions-grid > .panel,
+html[data-theme='dark'] .desk-reference .patient-panel {
+  background: #1d303d;
+  border-color: #405b6c;
+  color: #e2edf5;
+}
+html[data-theme='dark'] .desk-reference .panel-heading h2,
+html[data-theme='dark'] .desk-reference .welcome-row h1 {color: #f1f7fb}
+html[data-theme='dark'] .desk-reference .welcome-row .eyebrow {color: #8de0d5}
+html[data-theme='dark'] .desk-reference .welcome-row .subtle,
+html[data-theme='dark'] .desk-reference .patient-allergies legend {color: #bfd2df}
+html[data-theme='dark'] .desk-reference .today-pill {
+  background: #263e4d;
+  border-color: #496677;
+  color: #e2edf5;
+}
+html[data-theme='dark'] .desk-reference .actions-grid :is(input, select, textarea),
+html[data-theme='dark'] .desk-reference .patient-panel .search {
+  color-scheme: dark;
+  background: #142733;
+  border-color: #648093;
+  color: #f1f7fb;
+}
+html[data-theme='dark'] .desk-reference :is(.actions-grid input, .actions-grid textarea, .patient-panel .search)::placeholder {
+  color: #a8bfcd;
+}
+html[data-theme='dark'] .desk-reference .form-grid .patient-allergy-options input[type="radio"] {
+  background: #142733;
+  border-color: #83a0b3;
+}
+html[data-theme='dark'] .desk-reference .patient-allergy-options input[type="radio"]:checked::before {color: #8de0d5}
+html[data-theme='dark'] .desk-reference .patient-panel thead {background: #263e4d}
+html[data-theme='dark'] .desk-reference .patient-panel th {color: #e2edf5}
 @media(max-width:480px){.desk-reference .consultation-fee{padding:15px}.desk-reference .consultation-fee-heading strong{font-size:1rem}.desk-reference .mpesa-phone-icon{width:44px;height:54px}.desk-reference .mpesa-phone-icon svg{width:30px;height:43px}}
 .workspace.reference-dashboard{padding-left:288px}
 .reference-dashboard .reference-sidebar{position:absolute;top:0;left:0;bottom:0;width:260px;padding:18px 10px;background:#062446;border:0;color:#fff}
@@ -867,3 +1051,205 @@ html[data-theme='dark'] .desk-reference .consultation-fee-heading p,html[data-th
 .consultation-payment .payment-result{padding:12px;border-radius:9px;background:#edf3f8;color:#38516a;font-weight:700}
 .consultation-payment .payment-result[data-status='CONFIRMED']{background:#e3f7e8;color:#075c1c}
 .consultation-payment .payment-result[data-status='CANCELLED'],.consultation-payment .payment-result[data-status='FAILED']{background:#fff0ed;color:#9c3225}
+
+.reference-sidebar .sidebar-logo {
+  display:block;width:min(100%, 185px);height:auto;margin:0 auto 9px 0;
+  filter:url(#applewood-logo-on-dark);
+  transition:transform 220ms var(--motion-ease);
+}
+.reference-sidebar .sidebar-logo,
+.login-card > .login-logo {animation:applewood-logo-type 5s steps(1, end) infinite}
+@keyframes applewood-logo-type {
+  0% {clip-path:inset(0 79% 0 0)}
+  4% {clip-path:inset(0 69% 0 0)}
+  8% {clip-path:inset(0 61% 0 0)}
+  12% {clip-path:inset(0 52% 0 0)}
+  16% {clip-path:inset(0 48% 0 0)}
+  20% {clip-path:inset(0 40% 0 0)}
+  24% {clip-path:inset(0 27% 0 0)}
+  28% {clip-path:inset(0 20% 0 0)}
+  32% {clip-path:inset(0 13% 0 0)}
+  36%, 100% {clip-path:inset(0)}
+}
+@media (hover:hover) {
+  .reference-sidebar .sidebar-logo:hover {transform:translateY(-2px) scale(1.02)}
+}
+@media (prefers-reduced-motion:reduce) {
+  .reference-sidebar .sidebar-logo,
+  .login-card > .login-logo {animation:none;transition:none}
+  .reference-sidebar .sidebar-logo:hover {transform:none}
+}
+.applewood-logo-filter {position:absolute;pointer-events:none}
+.reference-sidebar .sidebar-group {display:grid;gap:2px;min-width:0}
+.reference-sidebar .grouped-sidebar button {
+  gap:9px;padding:8px 9px;min-height:32px;
+  transition:background-color 200ms ease,color 200ms ease,transform 200ms var(--motion-ease);
+}
+.reference-sidebar .grouped-sidebar button:focus-visible {
+  outline:2px solid #86dcd4;outline-offset:-2px;
+}
+.reference-sidebar .grouped-sidebar button:active {transform:scale(.985)}
+@media (hover:hover) {
+  .reference-sidebar .grouped-sidebar button:not(.active):hover {background-color:#ffffff12}
+  .reference-sidebar .grouped-sidebar button:hover > svg {transform:translateX(2px)}
+}
+.reference-sidebar nav.grouped-sidebar button.sidebar-heading {
+  width:100%;margin-top:4px;padding:5px 9px;min-height:26px;
+  color:#9bb6ca;font-size:.65rem;font-weight:700;text-transform:uppercase;
+}
+.reference-sidebar .sidebar-collapse {
+  display:grid;grid-template-rows:1fr;opacity:1;
+  transition:grid-template-rows 240ms var(--motion-ease),opacity 190ms ease;
+}
+.reference-sidebar .sidebar-collapse[inert] {grid-template-rows:0fr;opacity:0}
+.reference-sidebar .sidebar-group-links {
+  display:grid;gap:2px;min-height:0;overflow:hidden;transform:translateY(0);
+  transition:transform 240ms var(--motion-ease);
+}
+.reference-sidebar .sidebar-collapse[inert] > .sidebar-group-links {transform:translateY(-5px)}
+.reference-sidebar .grouped-sidebar svg {width:15px;height:15px;flex:none;transition:transform 200ms var(--motion-ease)}
+.reference-sidebar .sidebar-inventory-toggle {width:100%}
+.reference-sidebar .sidebar-inventory-toggle::after,
+.reference-sidebar .sidebar-heading::after {
+  content:"";width:6px;height:6px;border:solid #9bb6ca;border-width:0 1px 1px 0;
+  margin-left:auto;transform:rotate(45deg);transition:transform 240ms var(--motion-ease);
+}
+.reference-sidebar .sidebar-inventory-toggle[aria-expanded="true"]::after,
+.reference-sidebar .sidebar-heading[aria-expanded="true"]::after {transform:rotate(225deg)}
+.reference-sidebar #sidebar-stock-links button {width:calc(100% - 12px);margin-left:12px}
+@media (prefers-reduced-motion: reduce) {
+  .reference-sidebar .sidebar-collapse,
+  .reference-sidebar .sidebar-group-links,
+  .reference-sidebar .grouped-sidebar button,
+  .reference-sidebar .grouped-sidebar svg,
+  .reference-sidebar .sidebar-inventory-toggle::after,
+  .reference-sidebar .sidebar-heading::after {transition:none}
+  .reference-sidebar .grouped-sidebar button:active,
+  .reference-sidebar .grouped-sidebar button:hover > svg,
+  .reference-sidebar .sidebar-collapse[inert] > .sidebar-group-links {transform:none}
+}
+@media (max-width:700px) {
+  .reference-sidebar .sidebar-logo {width:min(100%, 150px)}
+  .reference-sidebar .grouped-sidebar {align-items:flex-start;gap:10px}
+  .reference-sidebar .sidebar-group {flex:none}
+}
+
+.consultation-overlay .consultation-payment.consultation-fee-dialog {
+  width: min(100%, 520px);
+  gap: 10px;
+  padding: clamp(12px, 2vw, 16px);
+  border: 1px solid #e2e7ef;
+  border-radius: 18px;
+  background: #fff;
+  color: #081d42;
+  font-family: "Times New Roman", Times, serif;
+}
+.consultation-fee-dialog :is(button, input) {font-family:inherit}
+.consultation-fee-dialog .consultation-close {top: 16px; right: 16px; color: #49576b; font-size: 2rem}
+.consultation-fee-dialog .collect-heading {gap: 14px}
+.consultation-fee-dialog .collect-heading h3 {color: inherit; font-size: clamp(1.25rem, 3.3vw, 1.75rem); line-height: 1.13; font-weight: 800}
+.consultation-fee-dialog .collect-heading p {color: #49576b; font-size: .9rem}
+.consultation-fee-dialog .collect-icon {width: 56px; height: 54px; padding: 7px; border-radius: 13px; background: #0b8e40}
+.consultation-fee-dialog .collect-icon svg {width: 24px; height: 24px}
+.consultation-fee-dialog .collect-icon small {font-size: .72rem; white-space: nowrap}
+.consultation-fee-dialog .consultation-summary {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, .75fr);
+  gap: 0;
+  padding: 8px 4px;
+  border-radius: 15px;
+  background: #f1f3f8;
+}
+.consultation-fee-dialog .consultation-summary > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 6px;
+  row-gap: 3px;
+  align-content: center;
+  padding: 0 8px;
+}
+.consultation-fee-dialog .consultation-summary > div + div {border-left: 1px solid #c8d1de}
+.consultation-fee-dialog .consultation-summary svg {grid-row: span 2; align-self: start; margin-top: 3px}
+.consultation-fee-dialog .consultation-summary span {color: #49576b; font-size: .9rem; white-space: nowrap}
+.consultation-fee-dialog .consultation-summary strong {min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .92rem}
+.consultation-fee-dialog .collect-status {justify-self: start; border-radius: 999px; background: #d1e8ff; padding: 3px 9px}
+.consultation-fee-dialog .collect-status:is([data-status='CONFIRMED'], [data-status='AWAITING_RECEIPT']) {background: #d1f0db; color: #08612e}
+.consultation-fee-dialog .collect-amount {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid #d4efdd;
+  border-radius: 15px;
+  background: #e3f6e9;
+  color: #08783a;
+}
+.consultation-fee-dialog .collect-amount > svg {width: 28px; height: 28px}
+.consultation-fee-dialog .collect-amount-edit {grid-column: auto; max-width: none; gap: 2px; color: inherit}
+.consultation-fee-dialog .collect-amount-edit > span:first-child {font-size: 1rem}
+.consultation-fee-dialog .collect-currency {display: flex; align-items: baseline; gap: 6px; color: #081d42; font-size: 1.45rem; line-height: 1.2}
+.consultation-fee-dialog .collect-amount-edit input {padding: 0 3px; width: 7ch; height: auto; border: 0; background: transparent; color: inherit; font: inherit}
+.consultation-fee-dialog .collect-amount small {grid-area: auto; justify-self: end; text-align: center; border-color: #13924a; color: #08612e}
+.consultation-fee-dialog .collect-phone {color: inherit; font-size: 1rem}
+.consultation-fee-dialog .collect-phone > span {display: flex; align-items: center; gap: 9px}
+.consultation-fee-dialog .collect-phone input {min-height: 42px; padding: 7px 12px; border: 1px solid #b4c0d0; border-radius: 14px; background: #fff; color: #081d42; font-size: 1.12rem; font-weight: 750}
+.consultation-fee-dialog .collect-info {display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: 12px; background: #dcf4e4; color: #08612e!important; font-size: .93rem; font-weight: 600}
+.consultation-fee-dialog .collect-info span {display: grid; place-items: center; flex: none; width: 25px; height: 25px; border-radius: 50%; background: #0b8e40; color: #fff}
+.consultation-fee-dialog button.wide-button {display: flex; justify-content: center; align-items: center; gap: 10px; min-height: 46px; border-radius: 14px; background: #0b8e40; border-color: #0b8e40; font-size: clamp(.9rem, 2vw, 1.05rem)}
+.payment-success-screen {
+  position:fixed;inset:0;z-index:2000;display:flex;flex-direction:column;
+  align-items:center;justify-content:safe center;gap:14px;padding:24px;
+  overflow-y:auto;overscroll-behavior:contain;text-align:center;
+  background:linear-gradient(145deg,#104b39,#082e26);color:#f3fff8;
+  font-family:"Times New Roman",Times,serif;
+}
+.payment-success-icon {
+  display:grid;place-items:center;width:70px;height:70px;flex:none;
+  border-radius:50%;background:#c9f7d9;color:#104b39;font-size:2.3rem;
+}
+.payment-success-screen h2 {margin:0;color:inherit;font-size:clamp(1.8rem,5vw,3.25rem)}
+.payment-success-screen p {margin:0;color:#d4f1e2;font-size:clamp(1rem,2.5vw,1.25rem)}
+.payment-success-screen button {
+  min-width:120px;margin-top:8px;padding:10px 24px;border:1px solid #c9f7d9;
+  border-radius:10px;background:#c9f7d9;color:#104b39;font:inherit;font-weight:700;
+}
+.payment-success-screen button:focus-visible {outline:2px solid #fff;outline-offset:4px}
+html[data-theme='dark'] .consultation-overlay .consultation-fee-dialog {
+  color-scheme: dark;
+  background: #172a37;
+  border-color: #405b6c;
+  color: #f1f7fb;
+}
+html[data-theme='dark'] .consultation-fee-dialog .consultation-close,
+html[data-theme='dark'] .consultation-fee-dialog p,
+html[data-theme='dark'] .consultation-fee-dialog .consultation-summary span {color: #bfd2df}
+html[data-theme='dark'] .consultation-fee-dialog .consultation-summary {background: #263e4d}
+html[data-theme='dark'] .consultation-fee-dialog .consultation-summary > div + div {border-color: #496677}
+html[data-theme='dark'] .consultation-fee-dialog .collect-status {background: #294e69; color: #e1f2ff}
+html[data-theme='dark'] .consultation-fee-dialog .collect-amount,
+html[data-theme='dark'] .consultation-fee-dialog .collect-info {
+  background: #204731;
+  border-color: #3e7655;
+  color: #d1f1d7!important;
+}
+html[data-theme='dark'] .consultation-fee-dialog .collect-amount-edit,
+html[data-theme='dark'] .consultation-fee-dialog .collect-amount small,
+html[data-theme='dark'] .consultation-fee-dialog .collect-info p {color: #d1f1d7}
+html[data-theme='dark'] .consultation-fee-dialog .collect-currency,
+html[data-theme='dark'] .consultation-fee-dialog .collect-amount-edit input {color: #f1f7fb}
+html[data-theme='dark'] .consultation-fee-dialog .collect-amount-edit input {background: transparent}
+html[data-theme='dark'] .consultation-fee-dialog .collect-phone input {background: #142733; border-color: #648093; color: #f1f7fb}
+html[data-theme='dark'] .consultation-fee-dialog .payment-result {background: #263e4d; color: #e1f2ff}
+html[data-theme='dark'] .consultation-fee-dialog .collect-status:is([data-status='CONFIRMED'], [data-status='AWAITING_RECEIPT']) {background: #204731; color: #d1f1d7}
+html[data-theme='dark'] .consultation-fee-dialog .payment-result:is([data-status='FAILED'], [data-status='CANCELLED']),
+html[data-theme='dark'] .consultation-fee-dialog .alert.error {background: #492a2c; color: #ffdad6}
+@media (max-width: 440px) {
+  .consultation-fee-dialog .collect-heading {gap: 12px}
+  .consultation-fee-dialog .collect-icon {width: 50px; height: 50px; border-radius: 11px}
+  .consultation-fee-dialog .collect-icon svg {width: 22px; height: 22px}
+  .consultation-fee-dialog .collect-icon small {font-size: .66rem}
+  .consultation-fee-dialog .consultation-summary {grid-template-columns: 1fr; padding: 0 12px}
+  .consultation-fee-dialog .consultation-summary > div {padding: 8px 0}
+  .consultation-fee-dialog .consultation-summary > div + div {border-left: 0; border-top: 1px solid #c8d1de}
+  .consultation-fee-dialog .collect-amount {grid-template-columns: auto minmax(0, 1fr)}
+  .consultation-fee-dialog .collect-amount small {grid-column: 2; justify-self: start}
+}

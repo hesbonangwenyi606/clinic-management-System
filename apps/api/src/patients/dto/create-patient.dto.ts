@@ -1,20 +1,26 @@
 import { Gender } from '@prisma/client';
-import { IsDateString, IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsEmail, IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class CreatePatientDto {
   @IsString()
-  @MinLength(1)
+  @Matches(/^\p{L}[\p{L}\p{M}]*$/u, { message: 'First name must contain letters only.' })
   @MaxLength(80)
   firstName!: string;
 
   @IsString()
-  @MinLength(1)
+  @Matches(/^\p{L}[\p{L}\p{M}]*$/u, { message: 'Last name must contain letters only.' })
   @MaxLength(80)
   lastName!: string;
 
   @IsOptional()
   @IsDateString()
   dateOfBirth?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(999)
+  age?: number | null;
 
   @IsOptional()
   @IsEnum(Gender)
@@ -37,7 +43,7 @@ export class CreatePatientDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(200)
+  @Matches(/^\+?[0-9]{7,13}$/, { message: 'Emergency contact must contain 7 to 13 digits, optionally starting with +.' })
   emergencyContact?: string;
 
   @IsOptional()

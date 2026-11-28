@@ -1,4 +1,4 @@
-import { rolesFor } from '@cms/access';
+import { canPerform, rolesFor } from '@cms/access';
 import { Controller, Patch, Delete, Get, Param, ParseUUIDPipe, Post, Query, Body } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -25,7 +25,7 @@ export class PatientsController {
   @Get(':id')
   @Roles(...(rolesFor('patients.read') as UserRole[]))
   get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.patients.get(id,user.sub);
+    return this.patients.get(id, user.sub, canPerform(user.role, 'invoices.read'));
   }
 
   @Post()

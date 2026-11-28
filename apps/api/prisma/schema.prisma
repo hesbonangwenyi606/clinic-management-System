@@ -94,10 +94,12 @@ model PasswordRecovery {
 
 model Patient {
   id              String   @id @default(uuid()) @db.Uuid
-  patientNumber   String   @unique
+  patientNumber   String   @unique @default(dbgenerated("('P-'::text || nextval('patient_number_seq'::regclass))"))
+  legacyPatientNumber String? @unique
   firstName       String
   lastName        String
   dateOfBirth     DateTime?
+  age             Int?
   gender          Gender  @default(NOT_SPECIFIED)
   phone           String?
   email           String?
@@ -117,13 +119,15 @@ model Patient {
 
 model Visit {
   id              String      @id @default(uuid()) @db.Uuid
-  visitNumber     String      @unique
+  visitNumber     String      @unique @default(dbgenerated("('V-'::text || nextval('visit_number_seq'::regclass))"))
+  legacyVisitNumber String?   @unique
   patientId       String      @db.Uuid
   patient         Patient     @relation(fields: [patientId], references: [id], onDelete: Restrict)
   type            VisitType
   status          VisitStatus @default(REGISTERED)
   reason          String
   currentDepartment String?
+  archivedAt      DateTime?
   arrivedAt       DateTime    @default(now())
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
@@ -247,6 +251,8 @@ model MpesaAttempt {
   amount Int
   tokenHash String @unique
   checkoutId String? @unique
+  callbackResultCode Int?
+  callbackReceipt String?
   status String @default("INITIATING")
   message String?
   createdAt DateTime @default(now())

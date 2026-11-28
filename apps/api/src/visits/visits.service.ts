@@ -2,7 +2,6 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma, UserRole, VisitStatus } from '@prisma/client';
 import { visitTransitionsFor, rolesFor } from '@cms/access';
 import { ListQuery, pagination } from '../common/pagination';
-import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
@@ -34,7 +33,19 @@ export class VisitsService {
       if(statusValue !== 'OPEN') status = statusValue as VisitStatus;
     }
     return this.prisma.visit.findMany({
-      where: { status:statusValue==='OPEN'?{notIn:['COMPLETED','DISCHARGED','CANCELLED']}:status, ...(search ? {OR:[{visitNumber:{contains:search,mode:'insensitive'}},{patient:{OR:[{firstName:{contains:search,mode:'insensitive'}},{lastName:{contains:search,mode:'insensitive'}},{patientNumber:{contains:search,mode:'insensitive'}}]}}]} : {}) },
+      where: {
+        archivedAt: null,
+        status: statusValue === 'OPEN' ? { notIn: ['COMPLETED', 'DISCHARGED', 'CANCELLED'] } : status,
+        ...(search && { OR: [
+          { visitNumber: { contains: search, mode: 'insensitive' } },
+          { legacyVisitNumber: { equals: search, mode: 'insensitive' } },
+          { patient: { OR: [
+            { firstName: { contains: search, mode: 'insensitive' } },
+            { lastName: { contains: search, mode: 'insensitive' } },
+            { patientNumber: { contains: search, mode: 'insensitive' } },
+          ] } },
+        ] }),
+      },
       orderBy: [{ arrivedAt: 'desc' },{id:'desc'}],
       skip, take,
       select: {
@@ -48,8 +59,8 @@ export class VisitsService {
   }
   async summary() {
     const [active,waiting] = await this.prisma.$transaction([
-      this.prisma.visit.count({where:{status:{notIn:['COMPLETED','DISCHARGED','CANCELLED']}}}),
-      this.prisma.visit.count({where:{status:{in:['REGISTERED','WAITING']}}}),
+      this.prisma.visit.count({where:{archivedAt:null,status:{notIn:['COMPLETED','DISCHARGED','CANCELLED']}}}),
+      this.prisma.visit.count({where:{archivedAt:null,status:{in:['REGISTERED','WAITING']}}}),
     ],{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
     return {active,waiting};
   }
@@ -73,10 +84,15 @@ export class VisitsService {
 
   async remove(id: string, userId: string) {
     return this.prisma.$transaction(async tx => {
-      const visit = await tx.visit.findUnique({where:{id},select:{status:true,admission:{select:{id:true}},_count:{select:{workflowEvents:true,careEntries:true,labOrders:true,invoices:true,prescriptions:true}}}});
+      const visit = await tx.visit.findUnique({where:{id},select:{archivedAt:true,admission:{select:{id:true}},_count:{select:{careEntries:true,labOrders:true,invoices:true,prescriptions:true}}}});
       if (!visit) throw new NotFoundException('Visit was not found.');
+      if (visit.archivedAt) return {deleted:false,archived:true};
       const counts = visit._count;
-      if (visit.admission || counts.careEntries || counts.labOrders || counts.invoices || counts.prescriptions) throw new BadRequestException('This visit has linked clinical, admission, or billing records and cannot be deleted.');
+      if (visit.admission || counts.careEntries || counts.labOrders || counts.invoices || counts.prescriptions) {
+        await tx.visit.update({where:{id},data:{archivedAt:new Date()}});
+        await tx.auditLog.create({data:{userId,action:'VISIT_ARCHIVED',entityType:'Visit',entityId:id}});
+        return {deleted:false,archived:true};
+      }
       await tx.visit.delete({where:{id}});
       await tx.auditLog.create({data:{userId,action:'VISIT_DELETED',entityType:'Visit',entityId:id}});
       return {deleted:true};
@@ -91,7 +107,6 @@ export class VisitsService {
       if (patient.archivedAt) throw new BadRequestException('Archived patients cannot open new visits.');
       const visit = await transaction.visit.create({
         data: {
-          visitNumber: `V-${randomUUID().toUpperCase()}`,
           patientId: data.patientId,
           type: data.type,
           reason: data.reason.trim(),

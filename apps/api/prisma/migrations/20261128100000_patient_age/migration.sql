@@ -1,0 +1,2 @@
+ALTER TABLE "Patient" ADD COLUMN "age" INTEGER
+  CHECK ("age" BETWEEN 0 AND 999);

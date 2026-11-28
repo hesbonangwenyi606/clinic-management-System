@@ -1,7 +1,11 @@
 'use client';
 
+import { PatientAllergyInput, PatientDigitsInput, PatientNameInput, readPatientAllergies } from './patient-inputs';
+
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 
 import { canPerform, modulesFor, visitTransitionsFor } from '@cms/access';
 import { LoadingState } from '../components/motion';
@@ -17,8 +21,36 @@ const Reports = dynamic(() => import('./reports'), { loading: () => <LoadingStat
 const Employees = dynamic(() => import('./employees'), { loading: () => <LoadingState label="Loading employees…" /> });
 const Portal = dynamic(() => import('./portal'), { loading: () => <LoadingState label="Loading your clinic record…" /> });
 const departmentLabels: Record<string,string> = { inpatient:'Inpatient care', triage:'Triage', clinical:'Clinical records', labs:'Laboratory', stock:'Pharmacy stock', movements:'Stock usage history', prescriptions:'Prescriptions', invoices:'Billing & payments', recovery:'Recovery', catering:'Catering', appointments:'Appointments', expenses:'Expenses', staff:'Employees & accounts', reports:'Reports', audit:'Audit log' };
+const paymentStatuses = new Map([
+  ['PENDING', { label: 'Pending', description: 'Awaiting payment confirmation' }],
+  ['AWAITING_RECEIPT', { label: 'Paid', description: 'Payment confirmed by M-Pesa. Receipt pending.' }],
+  ['CONFIRMED', { label: 'Paid', description: 'Payment successful' }],
+  ['CANCELLED', { label: 'Cancelled', description: 'Payment cancelled. No payment was recorded.' }],
+  ['FAILED', { label: 'Failed', description: 'Payment not completed' }],
+  ['UNKNOWN', { label: 'Unknown', description: 'Payment status unavailable. Check the payment before resending.' }],
+]);
+
+const sidebarGroups = [
+  {title: 'Patient Care', items: [['desk', 'Patient Desk', 'patient'], ['triage', 'Triage', 'triage'], ['appointments', 'Appointments', 'appointments'], ['clinical', 'Clinical Records', 'clinical'], ['inpatient', 'Inpatient Care', 'inpatient']]},
+  {title: 'Clinical Services', items: [['labs', 'Laboratory', 'labs'], ['stock', 'Pharmacy', 'medicine'], ['prescriptions', 'Prescriptions', 'prescriptions']]},
+  {title: 'Finance & Inventory', items: [['invoices', 'Billing & Payments', 'card'], ['recovery', 'Recovery', 'invoices'], ['inventory', 'Stock Management', 'stock']]},
+  {title: 'Administration', items: [['staff', 'Employees', 'patient'], ['catering', 'Catering', 'catering'], ['expenses', 'Expenses', 'wallet'], ['reports', 'Reports', 'reports'], ['audit', 'Audit Log', 'audit']]},
+] as const;
 
 const workareaIconPaths: Record<string, string> = {
+  mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
+  lock: 'M5 10h14v11H5zM8 10V7a4 4 0 0 1 8 0v3M12 14v3',
+  signin: 'M14 3h6v18h-6M3 12h12m-5-5 5 5-5 5',
+  dashboard: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
+  medicine: 'M8 20a5 5 0 0 1-4-8l8-8a5 5 0 0 1 7 7l-8 8a5 5 0 0 1-3 1Zm0-11 7 7',
+  catering: 'M4 3v5a3 3 0 0 0 6 0V3M7 3v18M18 3c-2 0-3 2-3 5v4h4V3m0 9v9',
+  reports: 'M4 20V12m5 8V5m6 15V9m5 11V3',
+  audit: 'M12 2l8 4v6c0 4-4 8-8 10-4-2-8-6-8-10V6Zm-4 10 3 3 5-6',
+  message: "M20 15H9l-5 4V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2Z",
+  card: "M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm-2 5h20m-6 5h2",
+  wallet: "M21 8H5a2 2 0 0 1 0-4h13v4m3 0v12H5a2 2 0 0 1-2-2V6m18 6h-6a2 2 0 0 0 0 4h6",
+  call: "M7 3 4 4c-1 1-1 4 0 6a21 21 0 0 0 10 10c2 1 5 1 6 0l1-3-5-3-2 2a14 14 0 0 1-6-6l2-2-3-5Z",
+  mobile: "M8 2h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm3 17h2",
   waiting:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2',
   triage:'M12 21s-8-4.5-8-10a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 11c0 5.5-8 10-8 10ZM8 12h2l1-2 2 4 1-2h2',
   clinical:'M8 3h8l2 2v16H6V3h2Zm1 5h6M9 12h6M9 16h4',
@@ -33,6 +65,33 @@ const workareaIconPaths: Record<string, string> = {
 };
 function WorkareaIcon({area}:{area:string}) {
   return <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={workareaIconPaths[area] ?? 'M12 4v16M4 12h16'}/></svg>;
+}
+
+function ApplewoodLogo({className}: {className: string}) {
+  return <>
+    <svg width="0" height="0" className="applewood-logo-filter" aria-hidden="true">
+      <defs>
+        <filter id="applewood-logo-cutout" x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values="
+            1 0 0 0 0
+            0 1 0 0 0
+            0 0 1 0 0
+            -.26 -.52 -.26 1.04 0" />
+          <feComponentTransfer><feFuncA type="linear" slope="2" intercept="-.06" /></feComponentTransfer>
+        </filter>
+        <filter id="applewood-logo-on-dark" x="0%" y="0%" width="100%" height="100%" colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values="
+            .78 0 0 0 .30
+            0 .78 0 0 .25
+            0 0 .78 0 .28
+            -.26 -.52 -.26 1.04 0" />
+          <feComponentTransfer><feFuncA type="linear" slope="2" intercept="-.06" /></feComponentTransfer>
+        </filter>
+      </defs>
+    </svg>
+    <Image className={className} src="/images/applewood-logo.png" alt="Applewood Medical Centre"
+      width={637} height={239} priority />
+  </>;
 }
 
 type User = {
@@ -82,6 +141,10 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [forgotPassword, setForgotPassword] = useState(false);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [savedLoginEmail, setSavedLoginEmail] = useState('');
+  useEffect(() => {
+    try { setSavedLoginEmail(localStorage.getItem('cms:sign-in-email') ?? ''); } catch {}
+  }, []);
   const [recoverySent, setRecoverySent] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryMessage, setRecoveryMessage] = useState('');
@@ -91,6 +154,8 @@ export default function Home() {
   const [summary,setSummary] = useState({active:0,waiting:0});
   const [dashboardReports, setDashboardReports] = useState<{today: DashboardReport; all: DashboardReport} | null>(null);
   const [dashboardReportError, setDashboardReportError] = useState(false);
+  const [stockMenuOpen, setStockMenuOpen] = useState(false);
+  const [openSidebarGroups, setOpenSidebarGroups] = useState<string[]>([]);
   const [consultation, setConsultation] = useState<{patient:Record<string, unknown>;patientName:string;phone:string;amount:number;attemptId?:string;status?:string;message?:string} | null>(null);
 
   useEffect(() => {
@@ -113,7 +178,21 @@ export default function Home() {
     setSummary(totals);
   }, [page,patientPage]);
 
-  const pendingAttemptId = consultation?.status === 'PENDING' ? consultation.attemptId : undefined;
+  const pendingAttemptId = consultation?.status === 'PENDING' || consultation?.status === 'AWAITING_RECEIPT' ? consultation.attemptId : undefined;
+  const registrationForm = useRef<HTMLFormElement>(null);
+  const paymentConfirmed = consultation?.status === 'CONFIRMED';
+  const closeConsultation = useCallback(() => {
+    if (paymentConfirmed) setNotice('Payment successful. The consultation fee has been recorded.');
+    setConsultation(null);
+  }, [paymentConfirmed]);
+
+  useEffect(() => {
+    if (!paymentConfirmed) return;
+    registrationForm.current?.reset();
+    const timer = setTimeout(closeConsultation, 5000);
+    return () => clearTimeout(timer);
+  }, [paymentConfirmed, closeConsultation]);
+
   useEffect(() => {
     if (!pendingAttemptId) return;
     let active = true;
@@ -122,12 +201,12 @@ export default function Home() {
       try {
         const result = await api<{status:string;message?:string}>(`/mpesa/consultation/${pendingAttemptId}`);
         if (!active) return;
-        setConsultation(current => current?.attemptId === pendingAttemptId ? {...current,...result} : current);
+        setConsultation(current => current?.attemptId === pendingAttemptId && ['PENDING', 'AWAITING_RECEIPT'].includes(current.status ?? '') ? {...current,...result} : current);
         if (result.status === 'CONFIRMED') {
           await refresh(query);
           return;
         }
-        if (result.status !== 'PENDING') return;
+        if (result.status !== 'PENDING' && result.status !== 'AWAITING_RECEIPT') return;
       } catch {
         // A temporary connection failure does not determine payment status.
       }
@@ -141,6 +220,7 @@ export default function Home() {
 
   useEffect(() => {
     const expired = () => {
+      if (!roleRef.current) return;
       refreshRequest.current++; roleRef.current='';setUser(null);setPatients([]);setVisits([]);setTab('desk');setNotice('');setError('Your session ended. Please sign in again.');
     };
     window.addEventListener('cms:session-expired',expired);
@@ -206,7 +286,15 @@ export default function Home() {
         }),
       });
       roleRef.current = result.user.role;
+      const rememberedEmail = form.has('rememberEmail') ? String(form.get('email')).trim() : '';
+      try {
+        if (rememberedEmail) localStorage.setItem('cms:sign-in-email', rememberedEmail);
+        else localStorage.removeItem('cms:sign-in-email');
+      } catch {}
+      setSavedLoginEmail(rememberedEmail);
       setUser(result.user);
+      setOpenSidebarGroups([]);
+      setStockMenuOpen(false);
       setTab('dashboard');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to sign in.');
@@ -231,34 +319,59 @@ export default function Home() {
     }
   }
 
-  async function createPatient(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
+  async function deleteVisit(visit: Visit) {
+    if (!window.confirm("Delete this visit from the Patient Desk? Linked clinical, admission, and billing records will be preserved in the visit history.")) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
-      const patient = {
-          firstName: form.get('firstName'),
-          lastName: form.get('lastName'),
-          phone: form.get('phone') || undefined,
-          gender: form.get('gender'),
-          dateOfBirth: form.get('dateOfBirth') || undefined,
-          allergies: form.get('allergies') || undefined,
-          medicalAlerts: form.get('medicalAlerts') || undefined,
-          emergencyContact: form.get('emergencyContact') || undefined,
-          nextOfKin: form.get('nextOfKin') || undefined,
-        };
-      const payment = {patient,patientName:`${form.get('firstName')} ${form.get('lastName')}`.trim(),phone:String(form.get('phone') ?? ''),amount:Number(form.get('consultationFee'))};
-      setConsultation(payment);
-      formElement.reset();
-      setNotice('Send the payment prompt to complete registration.');
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to register patient.');
+      const result = await api<{deleted: boolean; archived?: boolean}>('/visits/' + visit.id, {method: 'DELETE'});
+      setNotice(result.archived ? 'Visit archived and removed from the Patient Desk.' : 'Visit deleted.');
+      await refresh(query);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to delete visit.');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function sendConsultation() {
+    if (!consultation || !canSendConsultation) return;
+    const { patient, phone, amount } = consultation;
+    setBusy(true);
+    setError('');
+    try {
+      const attempt = await api<{id: string; status: string}>('/mpesa/consultation', {
+        method: 'POST',
+        body: JSON.stringify({ patient: { ...patient, phone }, phone, amount }),
+      });
+      setConsultation({ ...consultation, attemptId: attempt.id, status: attempt.status, message: undefined });
+    } catch (error) {
+      if (!(error instanceof ApiError && [400, 401, 403, 503].includes(error.status))) {
+        setConsultation({ ...consultation, attemptId: undefined, status: 'UNKNOWN', message: 'The request status is uncertain. Check billing before trying again.' });
+      }
+      setError(error instanceof Error ? error.message : 'Unable to start the M-Pesa request.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openConsultation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setError('');
+    setNotice('');
+    const patient = {
+      firstName: form.get('firstName'),
+      lastName: form.get('lastName'),
+      gender: form.get('gender'),
+      age: form.get('age') ? Number(form.get('age')) : undefined,
+      allergies: readPatientAllergies(form) ?? undefined,
+      medicalAlerts: form.get('medicalAlerts') || undefined,
+      emergencyContact: form.get('emergencyContact') || undefined,
+      nextOfKin: form.get('nextOfKin') || undefined,
+    };
+    setConsultation({ patient, patientName: `${patient.firstName} ${patient.lastName}`.trim(), phone: '', amount: 0 });
   }
 
   async function createVisit(event: FormEvent<HTMLFormElement>) {
@@ -294,25 +407,42 @@ export default function Home() {
       <main className="login-shell">
         <div className="login-layout">
         <aside className="login-intro">
-          <div className="login-intro-brand"><span aria-hidden="true">+</span><strong>CLINIC MANAGEMENT SYSTEM</strong></div>
-          <div className="login-intro-copy"><p className="login-intro-kicker">A BETTER DAY OF CARE</p><h2 aria-label="Care starts with connection."><span className="login-typing" aria-hidden="true"><span className="login-typing-first">Care starts</span><span className="login-typing-second">with connection.</span></span></h2><p>Everything your clinic needs, together in one place.</p><div className="login-intro-line" aria-hidden="true" /></div>
-          <p className="login-intro-footer">YOUR CLINIC WORKSPACE <span> / </span> BUILT FOR CARE</p>
+          <div className="login-intro-brand">
+            <span aria-hidden="true"><Image src="/images/applewood-logo.png" alt="" width={637} height={239} /></span>
+            <strong>CLINIC MANAGEMENT SYSTEM</strong>
+          </div>
+          <div className="login-intro-copy">
+            <p className="login-intro-kicker">A better day of care</p>
+            <h2 aria-label="Care starts with connection."><span className="login-typing" aria-hidden="true">
+              <span className="login-typing-first">Care starts</span>
+              <span className="login-typing-second">with <em>connection.</em></span>
+            </span></h2>
+            <p>Everything your clinic needs, together in one place.</p>
+            <ul className="login-feature-list">
+              {[['patient','Patients'], ['appointments','Appointments'], ['triage','Consultations'], ['labs','Laboratory']].map(([icon, label]) =>
+                <li key={label}><WorkareaIcon area={icon} />{label}</li>)}
+            </ul>
+          </div>
+          <p className="login-intro-footer"><WorkareaIcon area="triage" />Your Health. Our Priority.</p>
         </aside>
         <section className="login-card">
-          <div className="brand-icon" aria-hidden="true">+</div>
+          <ApplewoodLogo className="login-logo" />
           <p className="eyebrow">CLINIC MANAGEMENT SYSTEM</p>
           <h1>Welcome back</h1>
           <p className="subtle">Sign in with your clinic account to continue.</p>
           {forgotPassword ? <div className="password-recovery"><h2>{recoverySent ? 'Enter your code' : 'Reset your password'}</h2><p>{recoverySent ? 'If an active account matches this email, a code has been sent. It expires in 10 minutes. Your new password must contain at least 14 characters.' : 'Enter your account email and we’ll send you a verification code.'}</p><form className="form-stack" onSubmit={async event=>{event.preventDefault();setBusy(true);setError('');setRecoveryMessage('');const form=new FormData(event.currentTarget);try{if(!recoverySent){const email=String(form.get('email')??'').trim();await api('/auth/password-recovery',{method:'POST',body:JSON.stringify({email})});setRecoveryEmail(email);setRecoverySent(true);}else{const password=String(form.get('password')??'');if(password!==form.get('confirmation')){setError('Passwords do not match.');return;}await api('/auth/password-recovery/reset',{method:'POST',body:JSON.stringify({email:recoveryEmail,code:form.get('code'),password})});setRecoverySent(false);setForgotPassword(false);setNotice('Password reset. Please sign in with your new password.');}}catch(e){setError(e instanceof Error?e.message:'Unable to reset your password.');}finally{setBusy(false);}}}>{!recoverySent ? <label>Email address<input name="email" type="email" autoComplete="email" required maxLength={254}/></label> : <><label>Verification code<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required /></label><label>New password<input name="password" type="password" autoComplete="new-password" minLength={14} maxLength={72} required /></label><label>Confirm new password<input name="confirmation" type="password" autoComplete="new-password" minLength={14} maxLength={72} required /></label></>}{error && <p className="alert error" role="alert">{error}</p>}{recoveryMessage && <p className="alert success" role="status">{recoveryMessage}</p>}<button disabled={busy}>{busy ? 'Please wait…' : recoverySent ? 'Set new password' : 'Send code'}</button></form>{recoverySent && <button type="button" className="quiet-button" disabled={busy} onClick={()=>{setRecoverySent(false);setError('');}}>Use a different email or resend</button>}<button type="button" className="quiet-button" onClick={()=>{setForgotPassword(false);setRecoverySent(false);setError('');}}>Back to sign in</button></div> : <>
           <form onSubmit={signIn} className="form-stack">
-            <label>Email address<input name="email" type="email" autoComplete="username" required /></label>
-            <label>Password<span className="password-field"><input name="password" type={showLoginPassword ? 'text' : 'password'} autoComplete="current-password" required /><button type="button" className="password-toggle" aria-label={showLoginPassword ? 'Hide password' : 'Show password'} aria-pressed={showLoginPassword} onClick={() => setShowLoginPassword(value => !value)}><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>{showLoginPassword && <path d="M4 4l16 16"/>}</svg></button></span></label>
-            <button type="button" className="forgot-password" onClick={()=>{setError('');setForgotPassword(true);}}>Forgot password?</button>
+            <label><span className="login-field-label"><WorkareaIcon area="mail" />Email address</span><input name="email" type="email" autoComplete="username" defaultValue={savedLoginEmail} required /></label>
+            <label><span className="login-field-label"><WorkareaIcon area="lock" />Password</span><span className="login-input password-field"><input name="password" type={showLoginPassword ? 'text' : 'password'} autoComplete="current-password" required /><button type="button" className="password-toggle" aria-label={showLoginPassword ? 'Hide password' : 'Show password'} aria-pressed={showLoginPassword} onClick={() => setShowLoginPassword(value => !value)}><svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>{showLoginPassword && <path d="M4 4l16 16"/>}</svg></button></span></label>
+            <div className="login-options">
+              <label><input type="checkbox" name="rememberEmail" defaultChecked={!!savedLoginEmail} />Remember email</label>
+              <button type="button" className="forgot-password" onClick={()=>{setError('');setForgotPassword(true);}}>Forgot password?</button>
+            </div>
             {error && <p className="alert error">{error}</p>}
             {notice && <p className="alert success" role="status">{notice}</p>}
-            <button disabled={busy} aria-busy={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+            <button className="login-submit" disabled={busy} aria-busy={busy}><WorkareaIcon area="signin" />{busy ? 'Signing in…' : 'Sign in'}</button>
           </form>
-          <p className="login-footnote">Accounts are provisioned by your clinic administrator.</p>
+          <p className="login-footnote"><WorkareaIcon area="audit" />Accounts are provisioned by your clinic administrator.</p>
           </>}
         </section>
         </div>
@@ -322,14 +452,75 @@ export default function Home() {
 
   if (user.role === 'PATIENT') return <Portal onSignOut={signOut} />;
   const canRegister = canPerform(user.role,'patients.create');
-  const hasDepartments = modulesFor(user.role).length > 0;
+  const role = user.role;
+  const availableModules = modulesFor(role);
+  const hasDepartments = availableModules.length > 0;
+  const paymentFieldsLocked = busy || consultation?.status === 'AWAITING_RECEIPT' || consultation?.status === 'CONFIRMED' || consultation?.status === 'UNKNOWN';
+  const paymentStatus = consultation?.status
+    ? paymentStatuses.get(consultation.status) ?? paymentStatuses.get('UNKNOWN')
+    : undefined;
+  const paymentCanRetry = consultation?.status === 'CANCELLED' || consultation?.status === 'FAILED';
+  const canSendConsultation = !!consultation && !busy && (!consultation.status || paymentCanRetry)
+    && Number.isInteger(consultation.amount) && consultation.amount >= 1 && consultation.amount <= 150000
+    && /^(0|254)[17][0-9]{8}$/.test(consultation.phone);
+  function sidebarAccess(key: string) {
+    if (key === 'desk') return true;
+    if (key === 'reports') return canPerform(role, 'reports.read');
+    if (key === 'staff') return canPerform(role, 'staff.create');
+    if (key === 'inventory') return availableModules.includes('stock') || availableModules.includes('movements');
+    return availableModules.includes(key);
+  }
+  function sidebarDepartmentButton(key: string, label: string, icon: string, highlight = true) {
+    if (!sidebarAccess(key)) return null;
+    const target = key === 'desk' || key === 'reports' ? key : key === 'staff' ? 'employees' : 'departments';
+    const active = highlight && tab === target && (target !== 'departments' || department === key);
+    return <button key={key} type="button" className={active ? 'active' : ''} onClick={() => {
+      if (target === 'departments') setDepartment(key);
+      if (target === 'reports') setReportsOpened(true);
+      setTab(target);
+    }}><WorkareaIcon area={icon} />{label}</button>;
+  }
   const canWorkflow = canPerform(user.role,'visits.status');
   const visibleVisits = visits;
   return (
     <main className={`workspace${tab === 'desk' || tab === 'dashboard' ? ' workspace-photo' : ''}${tab === 'dashboard' ? ' workspace-dashboard-photo reference-dashboard' : ''}${tab === 'desk' ? ' desk-reference' : ''}${tab !== 'desk' && tab !== 'dashboard' ? ' workarea-reference' : ''}`}>
-      <aside className="reference-sidebar"><div className="reference-brand"><span>✚</span><strong>Clinic<br/>Management</strong></div><nav aria-label="Main navigation"><button className={tab==='dashboard'?'active':''} onClick={()=>setTab('dashboard')}><span>⌂</span> Dashboard</button><button className={tab==='desk'?'active':''} onClick={()=>setTab('desk')}><span>♙</span> Patient desk</button>{modulesFor(user.role).filter(key=>!['reports','staff'].includes(key)).map(key=><button key={key} className={tab==='departments' && department===key?'active':''} onClick={()=>{setDepartment(key);setTab('departments');}}><span>{key==='clinical'?'▱':key==='labs'?'♧':key==='prescriptions'?'◇':'▤'}</span>{departmentLabels[key] ?? key}</button>)}{canPerform(user.role,'reports.read') && <button className={tab==='reports'?'active':''} onClick={()=>{setReportsOpened(true);setTab('reports');}}><span>▥</span> Reports</button>}{canPerform(user.role,'staff.create') && <button className={tab==='employees'?'active':''} onClick={()=>setTab('employees')}><span>⚙</span> Employees</button>}</nav></aside>
+      <aside className="reference-sidebar">
+        <ApplewoodLogo className="sidebar-logo" />
+        <nav aria-label="Main navigation" className="grouped-sidebar">
+          <button className={tab === 'dashboard' ? 'active' : ''} onClick={() => setTab('dashboard')}><WorkareaIcon area="dashboard" />Dashboard</button>
+          {sidebarGroups.map(({ title, items }) => {
+            const visible = items.filter(([key]) => sidebarAccess(key));
+            if (!visible.length) return null;
+            const open = openSidebarGroups.includes(title);
+            const linksId = 'sidebar-' + title.toLowerCase().replace(/[^a-z]+/g, '-');
+            return <div className="sidebar-group" key={title} role="group" aria-label={title}>
+              <button type="button" className="sidebar-heading" aria-expanded={open} aria-controls={linksId}
+                onClick={() => setOpenSidebarGroups(groups => groups.includes(title) ? groups.filter(group => group !== title) : [...groups, title])}>
+                {title}
+              </button>
+              <div id={linksId} className="sidebar-collapse" inert={!open}>
+                <div className="sidebar-group-links">
+                  {visible.map(([key, label, icon]) => key === 'inventory' ?
+                    <div key={key} className="sidebar-inventory">
+                      <button type="button" className="sidebar-inventory-toggle" aria-expanded={stockMenuOpen}
+                        aria-controls="sidebar-stock-links" onClick={() => setStockMenuOpen(open => !open)}>
+                        <WorkareaIcon area={icon} />{label}
+                      </button>
+                      <div id="sidebar-stock-links" className="sidebar-collapse" inert={!stockMenuOpen}>
+                        <div className="sidebar-group-links">
+                          {sidebarDepartmentButton('stock', 'Stock Inventory', 'stock', false)}
+                          {sidebarDepartmentButton('movements', 'Stock Usage History', 'movements')}
+                        </div>
+                      </div>
+                    </div> : sidebarDepartmentButton(key, label, icon))}
+                </div>
+              </div>
+            </div>;
+          })}
+        </nav>
+      </aside>
       <header className="topbar">
-        {tab === 'dashboard' ? <strong className="reference-header-title">Clinic Management</strong> : <div className="brand-line"><div className="brand-icon small">+</div><div><strong>Clinic CMS</strong><small>Operations workspace</small></div></div>}
+        {tab !== 'dashboard' && <div className="brand-line"><div className="brand-icon small">+</div><div><strong>Clinic CMS</strong><small>Operations workspace</small></div></div>}
         <div className="user-area"><span>{user.firstName} {user.lastName}</span><Account onChanged={signOut} onSignOut={signOut}/></div>
       </header>
 
@@ -337,7 +528,7 @@ export default function Home() {
       {reportsOpened && canPerform(user.role,'reports.read') && <div hidden={tab !== 'reports'}><Reports key={user.id} active={tab === 'reports'} /></div>}
       <div className="motion-page" key={tab} hidden={tab === 'reports'}>
       {tab === 'dashboard' ? <section className="reference-content">
-        <div className="reference-title"><h1>Patient Desk</h1><p>Register patients and manage today’s visits</p></div>
+        <div className="reference-title"><h1>{user.firstName} {user.lastName}</h1><p>Register patients and manage today’s visits</p></div>
         {error && <p className="alert error" role="alert">{error}</p>}
         <div className="reference-metrics">
           {canPerform(user.role,'patients.read') && <article><span className="reference-metric-icon">♙</span><div><b>Registered patients</b><strong>{patientTotal}</strong></div></article>}
@@ -347,7 +538,7 @@ export default function Home() {
         {dashboardReportError && <p className="alert error" role="status">Appointment figures could not be loaded.</p>}
         <div className="reference-columns"><div className="reference-main">
           <div className="reference-toolbar">{canRegister && <><button className="reference-primary" onClick={()=>{setDeskTarget('register-patient');setTab('desk');}}>＋ Register patient</button><button className="reference-secondary" onClick={()=>{setDeskTarget('open-visit');setTab('desk');}}>＋ Open visit</button></>}{canPerform(user.role,'patients.read') && <form onSubmit={e=>{e.preventDefault();setPage(1);setPatientPage(1);setTab('desk');}}><span>⌕</span><input aria-label="Search patients" placeholder="Search patient by name or phone" value={query} onChange={e=>setQuery(e.target.value)}/><button type="submit" aria-label="Search">→</button></form>}</div>
-          {canPerform(user.role,'visits.read') && <section className="reference-card reference-queue"><div className="reference-card-heading"><h2>Recent patient visits</h2><button onClick={()=>setTab('desk')}>View all →</button></div><div className="dashboard-table-wrap"><table><thead><tr><th>Patient</th><th>Visit type</th><th>Arrival</th><th>Status</th><th>Action</th></tr></thead><tbody>{visits.slice(0,5).map(visit=><tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.patient.patientNumber}</small></td><td>{visit.type.replaceAll('_',' ')}</td><td>{new Intl.DateTimeFormat('en-KE',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Nairobi'}).format(new Date(visit.arrivedAt))}</td><td><span className="dashboard-status">{visit.status.replaceAll('_',' ')}</span></td><td>{canPerform(user.role,'visits.update') ? <VisitEdit visit={visit} role={user.role} onSaved={()=>refresh(query)}/> : <button className="reference-open" onClick={()=>setTab('desk')}>Open</button>}{canPerform(user.role,'visits.delete') && <button type="button" className="visit-delete" disabled={busy} onClick={async()=>{if(!window.confirm(`Delete visit ${visit.visitNumber}? Visits with linked clinical, admission, or billing records cannot be deleted.`))return;setBusy(true);setError('');try{await api(`/visits/${visit.id}`,{method:'DELETE'});await refresh(query);}catch(e){setError(e instanceof Error?e.message:'Unable to delete visit.');}finally{setBusy(false);}}}>Delete</button>}</td></tr>)}{visits.length===0 && <tr><td colSpan={5} className="dashboard-empty">No visits to display.</td></tr>}</tbody></table></div></section>}
+          {canPerform(user.role,'visits.read') && <section className="reference-card reference-queue"><div className="reference-card-heading"><h2>Recent patient visits</h2><button onClick={()=>setTab('desk')}>View all →</button></div><div className="dashboard-table-wrap"><table><thead><tr><th>Patient</th><th>Visit type</th><th>Arrival</th><th>Status</th><th>Action</th></tr></thead><tbody>{visits.slice(0,5).map(visit=><tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.patient.patientNumber}</small></td><td>{visit.type.replaceAll('_',' ')}</td><td>{new Intl.DateTimeFormat('en-KE',{dateStyle:'medium',timeStyle:'short',timeZone:'Africa/Nairobi'}).format(new Date(visit.arrivedAt))}</td><td><span className="dashboard-status">{visit.status.replaceAll('_',' ')}</span></td><td>{canPerform(user.role,'visits.update') ? <VisitEdit visit={visit} role={user.role} onSaved={()=>refresh(query)}/> : <button className="reference-open" onClick={()=>setTab('desk')}>Open</button>}{canPerform(user.role,'visits.delete') && <button type="button" className="visit-delete" disabled={busy} onClick={() => deleteVisit(visit)}>Delete</button>}</td></tr>)}{visits.length===0 && <tr><td colSpan={5} className="dashboard-empty">No visits to display.</td></tr>}</tbody></table></div></section>}
         </div><aside className="reference-card reference-overview"><h2>Quick overview</h2>{canPerform(user.role,'reports.read') && <div className="reference-overview-stat"><span>▣</span><div><b>Today’s appointments</b><strong>{dashboardReports ? dashboardReports.today.appointments : '—'}</strong></div></div>}<div className="reference-overview-links"><h3>Clinic work areas</h3>{modulesFor(user.role).slice(0,5).map(key=><button key={key} onClick={()=>{setDepartment(key);setTab('departments');}}><span>✚</span><b>{departmentLabels[key] ?? key}</b><i>→</i></button>)}{!hasDepartments && <button onClick={()=>setTab('desk')}><span>♙</span><b>Patient desk</b><i>→</i></button>}</div></aside></div>
       </section> : tab === 'employees' && canPerform(user.role,'staff.create') ? <Employees role={user.role} userId={user.id} patients={patients} /> : tab === 'departments' && hasDepartments ? <Operations key={department} role={user.role} patients={patients} visits={visits} userId={user.id} initialModule={department} externalMenu /> : <>
       <section className="welcome-row">
@@ -368,18 +559,44 @@ export default function Home() {
       {canRegister && <section className="actions-grid">
         <article className="panel" id="register-patient">
           <div className="panel-heading"><div><p className="eyebrow">RECEPTION</p><h2>Register a patient</h2></div><span className="panel-symbol">＋</span></div>
-          <form onSubmit={createPatient} className="form-grid">
-            <label>First name<input name="firstName" maxLength={80} required /></label>
-            <label>Last name<input name="lastName" maxLength={80} required /></label>
+          <form ref={registrationForm} onSubmit={openConsultation} className="form-grid">
+            <label>First name<PatientNameInput name="firstName" required /></label>
+            <label>Last name<PatientNameInput name="lastName" required /></label>
             <label>Gender<select name="gender" defaultValue="NOT_SPECIFIED"><option value="NOT_SPECIFIED">Not specified</option><option value="FEMALE">Female</option><option value="MALE">Male</option><option value="OTHER">Other</option></select></label>
-            <label>Date of birth<input name="dateOfBirth" type="date" max={new Date().toISOString().slice(0,10)} /></label>
-            <label>Emergency contact<input name="emergencyContact" maxLength={200} /></label>
+            <label>Age<PatientDigitsInput name="age" /></label>
+            <label>Emergency contact<PatientDigitsInput name="emergencyContact" /></label>
             <label>Next of kin<input name="nextOfKin" maxLength={200} /></label>
-            <label>Allergies<input name="allergies" maxLength={2000} /></label>
+            <PatientAllergyInput />
             <label className="full">Medical alerts<input name="medicalAlerts" maxLength={2000} /></label>
-            <div className="consultation-fee full"><div className="consultation-fee-heading"><span className="mpesa-phone-icon" aria-hidden="true"><svg viewBox="0 0 48 64" fill="none"><rect x="6" y="3" width="36" height="58" rx="6" stroke="currentColor" strokeWidth="2.5"/><path d="M17 3v4h14V3" stroke="currentColor" strokeWidth="2.5"/><circle cx="24" cy="43" r="8" fill="#128b42"/><path d="m20 43 3 3 5-6" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></span><div><strong>M-Pesa payment</strong><p>Enter the phone number and consultation amount.</p></div><span className="consultation-badge">Sandbox</span></div><label>Phone number<input name="phone" type="tel" required pattern="(0|254)[17][0-9]{8}" placeholder="e.g. 0712345678" title="Enter a Kenyan mobile number such as 0712345678 or 254712345678" /></label><label>Amount (KES)<input name="consultationFee" type="number" required min="1" max="150000" step="1" placeholder="Enter amount" /></label><small>Send the payment prompt to complete registration.</small><button className="wide-button" disabled={busy}>{busy ? 'Please wait…' : 'Continue to payment'}</button></div>
+            <button type="submit" className="wide-button continue-payment" disabled={busy}>Continue to Payment</button>
           </form>
-          {consultation && <div className="consultation-overlay"><div className="consultation-payment" role="dialog" aria-modal="true" aria-labelledby="consultation-payment-title"><button type="button" className="consultation-close" aria-label="Close payment panel" onClick={()=>setConsultation(null)}>×</button><div className="collect-heading"><span className="collect-icon" aria-hidden="true">▣<small>M-PESA</small></span><div><h3 id="consultation-payment-title">Collect Consultation Fee</h3><p>M-PESA STK Push · Sandbox payment</p></div></div><div className="consultation-summary"><div><span>Patient name</span><strong>{consultation.patientName}</strong></div><div><span>Consultation type</span><strong>General consultation</strong></div><div><span>Payment status</span><strong>{consultation.status === 'CONFIRMED' ? 'Paid' : consultation.status === 'CANCELLED' ? 'Cancelled' : consultation.status === 'PENDING' ? 'Pending' : consultation.status === 'FAILED' ? 'Failed' : consultation.status === 'UNKNOWN' ? 'Unknown' : 'Unpaid'}</strong></div></div><div className="collect-amount"><span>Consultation fee</span><label className="collect-amount-edit">Amount (KES)<input type="number" aria-label="Consultation amount in KES" min="1" max="150000" step="1" value={consultation.amount || ""} disabled={!!consultation.status || busy} onChange={e=>setConsultation({...consultation,amount:Number(e.target.value)})} /></label><small>Full amount required</small></div><label className="collect-phone">M-PESA phone number<input type="tel" value={consultation.phone} disabled={!!consultation.status || busy} onChange={e=>setConsultation({...consultation,phone:e.target.value})} pattern="(0|254)[17][0-9]{8}" /></label>{!consultation.status && <><p className="collect-info">The payment is recorded only after M-Pesa confirms the full amount.</p><button type="button" className="wide-button" disabled={busy || !Number.isInteger(consultation.amount) || consultation.amount < 1 || consultation.amount > 150000 || !/^(0|254)[17]\d{8}$/.test(consultation.phone)} onClick={async()=>{setBusy(true);setError('');try{const result=await api<{id:string;status:string}>('/mpesa/consultation',{method:'POST',body:JSON.stringify({patient:{...consultation.patient,phone:consultation.phone},phone:consultation.phone,amount:consultation.amount})});setConsultation({...consultation,attemptId:result.id,status:result.status});await refresh(query);}catch(e){if(!(e instanceof ApiError && [400,401,403,503].includes(e.status))) setConsultation({...consultation,status:'UNKNOWN',message:'The request status is uncertain. Check billing before trying again.'});setError(e instanceof Error?e.message:'Unable to start the M-Pesa request.');}finally{setBusy(false);}}}>{busy ? 'Sending…' : `Send STK Push — KES ${consultation.amount.toLocaleString(undefined,{minimumFractionDigits:2})}`}</button></>}{consultation.status && <><p role="status" className="payment-result" data-status={consultation.status}>{consultation.status === 'CONFIRMED' ? 'Payment successfully confirmed.' : consultation.status === 'CANCELLED' ? 'Payment cancelled. No payment was recorded.' : consultation.status === 'FAILED' ? 'Payment not completed' : consultation.status === 'UNKNOWN' ? 'Prompt status unknown; reconcile before trying again.' : 'Awaiting payment confirmation'}</p>{consultation.message && <p>{consultation.message}</p>}{consultation.attemptId && consultation.status==='PENDING' && <button type="button" className="quiet-button" disabled={busy} onClick={async()=>{setBusy(true);try{const result=await api<{status:string;message?:string}>(`/mpesa/consultation/${consultation.attemptId}`);setConsultation({...consultation,...result});if(result.status==="CONFIRMED") await refresh(query);}catch(e){setError(e instanceof Error?e.message:'Unable to check payment status.');}finally{setBusy(false);}}}>Check payment status</button>}</>}</div></div>}
+          {paymentConfirmed ? createPortal(
+            <section className="payment-success-screen" role="dialog" aria-modal="true"
+              aria-labelledby="payment-success-title" aria-describedby="payment-success-description"
+              onKeyDown={event => {
+                if (event.key === 'Escape') closeConsultation();
+                if (event.key === 'Tab') event.preventDefault();
+              }}>
+              <span className="payment-success-icon" aria-hidden="true">&#10003;</span>
+              <h2 id="payment-success-title">Payment successful</h2>
+              <p id="payment-success-description">The consultation fee has been recorded.</p>
+              <button type="button" autoFocus onClick={closeConsultation}>Done</button>
+            </section>, document.body
+          ) : consultation && <div className="consultation-overlay"><div className="consultation-payment consultation-fee-dialog" role="dialog" aria-modal="true" aria-labelledby="consultation-payment-title"><button type="button" className="consultation-close" aria-label="Close payment panel" onClick={closeConsultation}>×</button>
+            <div className="collect-heading"><span className="collect-icon" aria-hidden="true"><WorkareaIcon area="mobile" /><small>M-PESA</small></span><div><h3 id="consultation-payment-title">Consultation Fee</h3><p>M-PESA STK Push · Sandbox</p></div></div>
+            {error && <p className="alert error" role="alert">{error}</p>}
+            <div className="consultation-summary">
+              <div><WorkareaIcon area="patient" /><span>Patient name</span><strong title={consultation.patientName}>{consultation.patientName}</strong></div>
+              <div><WorkareaIcon area="message" /><span>Type</span><strong>General consultation</strong></div>
+              <div><WorkareaIcon area="card" /><span>Status</span><strong className="collect-status" data-status={consultation.status}>{paymentStatus?.label ?? 'Unpaid'}</strong></div></div>
+            <div className="collect-amount"><WorkareaIcon area="wallet" /><label className="collect-amount-edit"><span>Consultation Fee</span><span className="collect-currency"><b>KES</b><input type="text" inputMode="numeric" aria-label="Consultation amount in KES" placeholder="Amount" pattern="[0-9]+" value={consultation.amount || ""} disabled={paymentFieldsLocked} onChange={event => { const value = event.currentTarget.value; if (/^[0-9]{0,6}$/.test(value)) setConsultation(current => current && {...current, amount: Number(value)}); }} /></span></label><small>Full amount required</small></div>
+            <label className="collect-phone"><span><WorkareaIcon area="call" />M-PESA Phone Number</span><input type="tel" inputMode="numeric" minLength={8} maxLength={30} placeholder="e.g. 0712345678" value={consultation.phone} disabled={paymentFieldsLocked} onChange={event => { const phone = event.currentTarget.value.replace(/[^0-9]/g, ''); setConsultation(current => current && {...current, phone}); }} pattern="[0-9]{8,30}" />{(!consultation.status || paymentCanRetry) && !/^(0|254)[17][0-9]{8}$/.test(consultation.phone) && <small>Enter a Kenyan M-Pesa number such as 0712345678 or 254712345678 to send the prompt.</small>}</label>{!consultation.status && <><p className="collect-info"><span aria-hidden="true">&#10003;</span>Payment will be recorded after M-Pesa confirms it.</p></>}{consultation.status && <><p role="status" className="payment-result" data-status={consultation.status}>{paymentStatus?.description}</p>{consultation.status === 'AWAITING_RECEIPT' ? <p>Do not resend this payment.</p> : consultation.message && <p>{consultation.message}</p>}{consultation.status === 'PENDING' && <p>Edits apply to the next prompt. You can retry once M-Pesa reports that this prompt was cancelled or failed.</p>}</>}
+            {(!consultation.status || consultation.status === 'PENDING' || paymentCanRetry) &&
+              <button type="button" className="wide-button" disabled={!canSendConsultation} onClick={sendConsultation}>
+                <WorkareaIcon area="mobile" />
+                {busy ? 'Sending…' : 'Send STK Push — KES ' + consultation.amount.toLocaleString('en-KE', {minimumFractionDigits: 2})}
+              </button>}
+          </div></div>}
         </article>
 
         <article className="panel" id="open-visit">
@@ -400,7 +617,7 @@ export default function Home() {
           <table>
             <thead><tr><th>Patient</th><th>Phone</th><th>Type</th><th>Status</th>{canWorkflow && <th>Workflow</th>}{canPerform(user.role,'visits.delete') && <th>Action</th>}</tr></thead>
             <tbody>
-              {visibleVisits.map((visit) => <tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.reason}</small></td><td>{visit.patient.phone ?? '—'}</td><td>{visit.type.replace('_', ' ')}</td><td><span className={`status ${visit.status.toLowerCase()}`}>{visit.status.replaceAll('_', ' ')}</span></td>{canWorkflow && <td><VisitWorkflow role={user.role} visit={visit} onSaved={() => refresh(query)} /></td>}{canPerform(user.role,'visits.delete') && <td><button type="button" className="visit-delete" disabled={busy} onClick={async()=>{if(!window.confirm(`Delete the visit for ${visit.patient.firstName} ${visit.patient.lastName}? This permanently deletes its workflow history. Visits with linked clinical, admission, or billing records cannot be deleted.`))return;setBusy(true);setError('');try{await api(`/visits/${visit.id}`,{method:'DELETE'});await refresh(query);}catch(e){setError(e instanceof Error?e.message:'Unable to delete visit.');}finally{setBusy(false);}}}>Delete</button></td>}</tr>)}
+              {visibleVisits.map((visit) => <tr key={visit.id}><td><strong>{visit.patient.firstName} {visit.patient.lastName}</strong><small>{visit.reason}</small></td><td>{visit.patient.phone ?? '—'}</td><td>{visit.type.replace('_', ' ')}</td><td><span className={`status ${visit.status.toLowerCase()}`}>{visit.status.replaceAll('_', ' ')}</span></td>{canWorkflow && <td><VisitWorkflow role={user.role} visit={visit} onSaved={() => refresh(query)} /></td>}{canPerform(user.role,'visits.delete') && <td><button type="button" className="visit-delete" disabled={busy} onClick={() => deleteVisit(visit)}>Delete</button></td>}</tr>)}
               {visibleVisits.length === 0 && <tr><td colSpan={4 + (canWorkflow ? 1 : 0) + (canPerform(user.role,'visits.delete') ? 1 : 0)} className="empty">No visits yet. Register a patient, then open a visit.</td></tr>}
             </tbody>
           </table>

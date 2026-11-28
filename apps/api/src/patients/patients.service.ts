@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { Prisma } from '@prisma/client';
@@ -16,6 +15,7 @@ export class PatientsService {
       ? {
           OR: [
             { patientNumber: { contains: term, mode: 'insensitive' as const } },
+            { legacyPatientNumber: { equals: term, mode: 'insensitive' as const } },
             { firstName: { contains: term, mode: 'insensitive' as const } },
             { lastName: { contains: term, mode: 'insensitive' as const } },
             { phone: { contains: term } },
@@ -35,6 +35,7 @@ export class PatientsService {
           firstName: true,
           lastName: true,
           dateOfBirth: true,
+          age: true,
           gender: true,
           phone: true,
           createdAt: true,
@@ -46,7 +47,7 @@ export class PatientsService {
     return { items, page, pageSize, total };
   }
 
-  async get(id: string, userId?:string) {
+  async get(id: string, userId?: string, includePayments = false) {
     const patient = await this.prisma.patient.findUnique({
       where: { id },
       include: {
@@ -59,13 +60,30 @@ export class PatientsService {
             status: true,
             reason: true,
             arrivedAt: true,
+            archivedAt: true,
           },
         },
       },
     });
     if (!patient) throw new NotFoundException('Patient was not found.');
     if(userId)await this.prisma.auditLog.create({data:{userId,action:'PATIENT_VIEWED',entityType:'Patient',entityId:id}});
-    return patient;
+    if (!includePayments || !patient.visits.length) return patient;
+
+    const payments = await this.prisma.payment.findMany({
+      where: { reversal: null, invoice: { visit: { patientId: id } } },
+      select: { amountCents: true, invoice: { select: { visitId: true } } },
+    });
+    const paidByVisit = new Map<string, number>();
+    for (const { amountCents, invoice: { visitId } } of payments) {
+      paidByVisit.set(visitId, (paidByVisit.get(visitId) ?? 0) + amountCents);
+    }
+    return {
+      ...patient,
+      visits: patient.visits.map(visit => ({
+        ...visit,
+        amountPaidCents: paidByVisit.get(visit.id) ?? 0,
+      })),
+    };
   }
 
   async create(data: CreatePatientDto, userId: string) {
@@ -79,7 +97,6 @@ export class PatientsService {
           lastName: data.lastName.trim(),
           email: data.email?.trim().toLowerCase(),
           dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : undefined,
-          patientNumber: `P-${randomUUID().toUpperCase()}`,
         },
       });
       await transaction.auditLog.create({
@@ -107,6 +124,7 @@ export class PatientsService {
       if(data.lastName!==undefined)patch.lastName=data.lastName.trim();
       if(data.gender!==undefined)patch.gender=data.gender;
       if(data.dateOfBirth!==undefined)patch.dateOfBirth=data.dateOfBirth?new Date(data.dateOfBirth):null;
+      if (data.age !== undefined) patch.age = data.age;
       for(const field of ['phone','email','address','emergencyContact','nextOfKin','allergies','medicalAlerts'] as const) {
         if(data[field]!==undefined)patch[field]=data[field]?.trim()||null;
       }
